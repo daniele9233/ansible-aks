@@ -19,3 +19,10 @@ cert_manager_chart_ref: "jetstack/cert-manager"
 
 # Usato dal role rancher_CAValid_install
 rancher_tls_secret_name: "tls-rancher-ingress"
+
+# Traefik (Ingress Controller) - prerequisito per rancher_ca_valid
+traefik_namespace: "traefik"
+traefik_chart_version: "33.2.1"
+traefik_helm_repo_name: "traefik"
+traefik_helm_repo_url: "https://traefik.github.io/charts"
+traefik_chart_ref: "traefik/traefik"

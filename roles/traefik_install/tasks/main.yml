@@ -1,0 +1,137 @@
+---
+# Installa Traefik come Ingress Controller con LoadBalancer.
+# IngressClass 'traefik' impostata come default -> raccoglie automaticamente
+# tutti gli Ingress senza classe esplicita (incluso quello di Rancher).
+#
+# Esecuzione:
+#   ansible-playbook site.yml --tags traefik --vault-password-file .vault_pass
+# (oppure passa con --tags rancher_ca_valid che lo include come dipendenza)
+
+# ---------------------------------------------------------------------------
+# STEP 1 — Helm repository Traefik
+# ---------------------------------------------------------------------------
+- name: Add Traefik helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ traefik_helm_repo_name }}"
+    repo_url: "{{ traefik_helm_repo_url }}"
+    state: present
+  check_mode: false
+
+# ---------------------------------------------------------------------------
+# STEP 2 — Namespace traefik
+# ---------------------------------------------------------------------------
+- name: Ensure namespace "{{ traefik_namespace }}" exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ traefik_namespace }}"
+
+# ---------------------------------------------------------------------------
+# STEP 3 — Installa / aggiorna Traefik
+# ---------------------------------------------------------------------------
+- name: Install / upgrade Traefik Helm release
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    name: traefik
+    chart_ref: "{{ traefik_chart_ref }}"
+    chart_version: "{{ traefik_chart_version }}"
+    release_namespace: "{{ traefik_namespace }}"
+    create_namespace: false
+    values:
+      # Esposizione LoadBalancer (AKS provisiona IP automaticamente)
+      service:
+        type: LoadBalancer
+      # Entrypoints: 80 (web) e 443 (websecure con TLS)
+      ports:
+        web:
+          port: 8000
+          exposedPort: 80
+          protocol: TCP
+          # Redirect automatico HTTP -> HTTPS su tutti gli Ingress
+          redirectTo:
+            port: websecure
+            priority: 10
+        websecure:
+          port: 8443
+          exposedPort: 443
+          protocol: TCP
+          tls:
+            enabled: true
+      # IngressClass default: cattura Ingress senza classe esplicita
+      ingressClass:
+        enabled: true
+        isDefaultClass: true
+      # Provider: standard Ingress + CRD (per IngressRoute/Middleware futuri)
+      providers:
+        kubernetesIngress:
+          enabled: true
+          publishedService:
+            enabled: true
+        kubernetesCRD:
+          enabled: true
+          allowCrossNamespace: false
+      # Hardening: nega RBAC superfluo
+      rbac:
+        enabled: true
+      # Log access per debugging iniziale; disabilitare in prod stabile
+      logs:
+        general:
+          level: INFO
+        access:
+          enabled: true
+    state: present
+    wait: true
+    timeout: "10m0s"
+    update_repo_cache: true
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Attendi che il LoadBalancer riceva l'IP esterno
+# ---------------------------------------------------------------------------
+- name: Wait for Traefik LoadBalancer external IP
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Service
+    name: traefik
+    namespace: "{{ traefik_namespace }}"
+  register: traefik_svc
+  retries: 30
+  delay: 10
+  until:
+    - traefik_svc.resources | length > 0
+    - traefik_svc.resources[0].status.loadBalancer.ingress | default([]) | length > 0
+    - (traefik_svc.resources[0].status.loadBalancer.ingress[0].ip is defined) or
+      (traefik_svc.resources[0].status.loadBalancer.ingress[0].hostname is defined)
+  when: not ansible_check_mode
+
+- name: Set Traefik LB endpoint fact
+  ansible.builtin.set_fact:
+    traefik_lb_endpoint: >-
+      {{ traefik_svc.resources[0].status.loadBalancer.ingress[0].ip
+         | default(traefik_svc.resources[0].status.loadBalancer.ingress[0].hostname) }}
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Riepilogo
+# ---------------------------------------------------------------------------
+- name: Traefik installation summary
+  ansible.builtin.debug:
+    msg:
+      - "Traefik {{ traefik_chart_version }} installato in namespace '{{ traefik_namespace }}'"
+      - "LoadBalancer endpoint: {{ traefik_lb_endpoint }}"
+      - "IngressClass 'traefik' = default -> raccoglie Ingress senza classe"
+      - "Entrypoints: web (80, redirect -> 443), websecure (443, TLS)"
+      - "DNS / hosts: {{ rancher_hostname }} -> {{ traefik_lb_endpoint }}"
+  when: not ansible_check_mode
+
+- name: Traefik dry-run summary
+  ansible.builtin.debug:
+    msg:
+      - "[DRY-RUN] Traefik {{ traefik_chart_version }} sarebbe installato in '{{ traefik_namespace }}'"
+      - "Service type: LoadBalancer (AKS provisionera' un IP)"
+      - "IngressClass 'traefik' configurata come default"
+  when: ansible_check_mode

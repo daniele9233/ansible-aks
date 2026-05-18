@@ -1,11 +1,13 @@
 ---
 # Installa Rancher con certificato CA valido (wildcard *.app.iac-svil.almaviva.it).
 # NON richiede cert-manager: il Secret TLS viene pre-creato dalle variabili vault.
+# Richiede Traefik come Ingress Controller (TLS termination con il secret).
+#
 # Variabili richieste in group_vars/all/vault_cavalid.yml (ansible-vault encrypted):
 #   vault_rancher_tls_key       -- chiave privata RSA 2048
-#   vault_rancher_tls_crt_chain -- fullchain PEM: leaf → AlmavivA Sub01 → AlmavivA RootCA
+#   vault_rancher_tls_crt_chain -- fullchain PEM: leaf -> AlmavivA Sub01 -> AlmavivA RootCA
 #
-# Esecuzione:
+# Esecuzione (con dipendenza Traefik auto-inclusa):
 #   ansible-playbook site.yml --tags rancher_ca_valid --vault-password-file .vault_pass
 
 # ---------------------------------------------------------------------------
@@ -67,8 +69,15 @@
       hostname: "{{ rancher_hostname }}"
       bootstrapPassword: "{{ rancher_bootstrap_password }}"
       ingress:
+        ingressClassName: "traefik"
         tls:
           source: "secret"
+        extraAnnotations:
+          # Compat per chart che non rendono ingressClassName
+          kubernetes.io/ingress.class: "traefik"
+          # Routing Traefik: solo entrypoint HTTPS + TLS attivo
+          traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+          traefik.ingress.kubernetes.io/router.tls: "true"
     state: present
     wait: true
     timeout: "15m0s"

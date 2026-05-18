@@ -6,12 +6,14 @@
 #   Certificato self-signed (cert-manager):
 #     ansible-playbook site.yml --tags rancher_self_signed --vault-password-file .vault_pass
 #
-#   Certificato CA valido (*.app.iac-svil.almaviva.it):
+#   Certificato CA valido (*.app.iac-svil.almaviva.it) + Traefik ingress:
 #     ansible-playbook site.yml --tags rancher_ca_valid --vault-password-file .vault_pass
 #
-# Solo uno dei due tag va passato per volta.
-# Prima di usare rancher_ca_valid: completare il fullchain (vedi SETUP-FULLCHAIN.md)
-#   e cifrare group_vars/all/vault_cavalid.yml con ansible-vault.
+#   Solo Traefik (utile per provisioning standalone):
+#     ansible-playbook site.yml --tags traefik --vault-password-file .vault_pass
+#
+# Prima di usare rancher_ca_valid: completare il fullchain in vault_cavalid.yml
+#   e cifrarlo con ansible-vault.
 
 - name: Install Rancher on AKS
   hosts: localhost
@@ -34,9 +36,18 @@
         - never
 
     # -------------------------------------------------------------------------
-    # OPZIONE B: Rancher con certificato CA valido (*.app.iac-svil.almaviva.it)
-    # Pre-requisito: fullchain completo + vault_cavalid.yml cifrato
+    # OPZIONE B: Traefik (Ingress Controller) + Rancher CA valida
+    # I tag sono condivisi: --tags rancher_ca_valid esegue entrambi in ordine.
+    # --tags traefik esegue solo Traefik.
     # -------------------------------------------------------------------------
+    - name: Install Traefik Ingress Controller
+      ansible.builtin.import_role:
+        name: traefik_install
+      tags:
+        - rancher_ca_valid
+        - traefik
+        - never
+
     - name: Install Rancher (CA valid cert -- *.app.iac-svil.almaviva.it)
       ansible.builtin.import_role:
         name: rancher_CAValid_install
