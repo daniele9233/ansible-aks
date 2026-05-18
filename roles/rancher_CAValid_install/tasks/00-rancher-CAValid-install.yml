@@ -49,6 +49,7 @@
       data:
         tls.crt: "{{ vault_rancher_tls_crt_chain | b64encode }}"
         tls.key: "{{ vault_rancher_tls_key | b64encode }}"
+  when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
 # STEP 4 — Installa Rancher (tls.source = secret -> usa il secret pre-creato)
@@ -72,6 +73,7 @@
     wait: true
     timeout: "15m0s"
     update_repo_cache: true
+  when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
 # STEP 5 — Verifica rollout
