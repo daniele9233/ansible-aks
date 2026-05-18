@@ -1,14 +1,9 @@
 ---
 # Installa Rancher con certificato CA valido (wildcard *.app.iac-svil.almaviva.it).
 # NON richiede cert-manager: il Secret TLS viene pre-creato dalle variabili vault.
-#
-# Pre-requisiti:
-#   1. group_vars/all/vault_cavalid.yml deve essere CIFRATO con ansible-vault
-#      e contenere vault_rancher_tls_key + vault_rancher_tls_crt_chain (fullchain completo)
-#   2. Il fullchain in vault_rancher_tls_crt_chain deve avere:
-#        [1] Certificato dominio  (*.app.iac-svil.almaviva.it)
-#        [2] Certificato intermediate (AlmavivA Sub01) -- vedi SETUP-FULLCHAIN.md
-#        [3] Root CA              -- vedi SETUP-FULLCHAIN.md
+# Variabili richieste in group_vars/all/vault_cavalid.yml (ansible-vault encrypted):
+#   vault_rancher_tls_key       -- chiave privata RSA 2048
+#   vault_rancher_tls_crt_chain -- fullchain PEM: leaf → AlmavivA Sub01 → AlmavivA RootCA
 #
 # Esecuzione:
 #   ansible-playbook site.yml --tags rancher_ca_valid --vault-password-file .vault_pass

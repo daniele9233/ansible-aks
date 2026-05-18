@@ -11,8 +11,7 @@
 #   head -1 group_vars/all/vault_cavalid.yml   # deve iniziare con $ANSIBLE_VAULT
 # =============================================================================
 
-# --- Chiave privata RSA 2048 ---
-# MD5 modulus (verifica corrispondenza con il certificato): 87e255f74ee13283cf9817409230f4a5
+# Chiave privata RSA 2048 per *.app.iac-svil.almaviva.it
 vault_rancher_tls_key: |
   -----BEGIN PRIVATE KEY-----
   MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCgTvB5qQec9WPQ
@@ -43,16 +42,8 @@ vault_rancher_tls_key: |
   DQc1bnzlFT1Z38rkZK4BzJE=
   -----END PRIVATE KEY-----
 
-# --- Fullchain certificato TLS ---
-# Ordine obbligatorio: [1] leaf → [2] intermediate → [3] rootCA
-#
-# [1] Certificato dominio: *.app.iac-svil.almaviva.it
-#     CN=*.app.iac-svil.almaviva.it | Issuer: AlmavivA Sub01
-#     Valido: 2025-07-31 → 2027-07-31
-#     MD5 modulus: 87e255f74ee13283cf9817409230f4a5
-#
-# [2] Intermediate: AlmavivA Sub01 -- DA AGGIUNGERE (vedi SETUP-FULLCHAIN.md)
-# [3] Root CA                      -- DA AGGIUNGERE (vedi SETUP-FULLCHAIN.md)
+# Fullchain PEM: [1] leaf *.app.iac-svil.almaviva.it → [2] AlmavivA Sub01 → [3] AlmavivA RootCA
+# Validità leaf: 2025-07-31 → 2027-07-31
 vault_rancher_tls_crt_chain: |
   -----BEGIN CERTIFICATE-----
   MIIFhDCCBGygAwIBAgITFgAAArrBDiAAnS1e4wABAAACujANBgkqhkiG9w0BAQsF
@@ -86,14 +77,66 @@ vault_rancher_tls_crt_chain: |
   p1e3lf4a0VlOmX/Rxb0eNaEc8wzTGUfERK+lZ+VyjIhP+vlPt79+CP3+k2xGJfh4
   rg6rn5XozFbr6yqBY1QgwXHuyYJ/+V4v
   -----END CERTIFICATE-----
-  # =========================================================
-  # [2] INTERMEDIATE: AlmavivA Sub01
-  # Aggiungere qui il blocco PEM dell'intermediate.
-  # Vedere roles/rancher_CAValid_install/files/SETUP-FULLCHAIN.md
-  # =========================================================
-  #
-  # =========================================================
-  # [3] ROOT CA: AlmavivA Root
-  # Aggiungere qui il blocco PEM della rootCA.
-  # Vedere roles/rancher_CAValid_install/files/SETUP-FULLCHAIN.md
-  # =========================================================
+  -----BEGIN CERTIFICATE-----
+  MIIFrjCCA5agAwIBAgITaAAAAAVS6cm/P1KyCgAAAAAABTANBgkqhkiG9w0BAQsF
+  ADAaMRgwFgYDVQQDEw9BbG1hdml2QSBSb290Q0EwHhcNMjUwNTE5MDg1NjI1WhcN
+  MzUwNTE5MDkwNjI1WjBKMRUwEwYKCZImiZPyLGQBGRYFbG9jYWwxGDAWBgoJkiaJ
+  k/IsZAEZFghpdG1hc3RlcjEXMBUGA1UEAxMOQWxtYXZpdkEgU3ViMDEwggEiMA0G
+  CSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDFnSMP18v1ocYhzq0kZcWtnuUDMqlV
+  BaLt/rLWj9zU6F9/idbY2bQPMODG88+Pr5gllOEj0BfTSsn7VAMOR+yY9gYgLO/p
+  Cz7yqdPJO8FCrS9i+nYEO+K9LtrNFr7rp5bRLHPI+qPPin5Z9cvpXheSpzWaYGp9
+  Tvk6GVDUsW8VzHCRaoxhhnuwdsiVgttpAXLYbxmG/cp6nkA3qAcDyTaJJPd2KjyF
+  AXgpYc4FIdkIWgeGulkkRstt4FForUQEQkhF4FoJpi5aqjZNa3zoj5IYv+/IoG8y
+  oVXPKrdyZQ8gHEue3Dsj8ELxxrwG0WuObleIjXLwkybomgWWFh/3oGRFAgMBAAGj
+  ggG7MIIBtzAQBgkrBgEEAYI3FQEEAwIBATAjBgkrBgEEAYI3FQIEFgQUa1NahfMo
+  P4fE1V2ZBc4XWjcjnpUwHQYDVR0OBBYEFEt3GBtzkE/52Wb1+FOjullY0aKVMBkG
+  CSsGAQQBgjcUAgQMHgoAUwB1AGIAQwBBMAsGA1UdDwQEAwIBhjAPBgNVHRMBAf8E
+  BTADAQH/MB8GA1UdIwQYMBaAFB6b0oYQpX+Te5jkbw2uDh7/4gndMHUGA1UdHwRu
+  MGwwaqBooGaGMWh0dHA6Ly9jcmwxLmFsbWF2aXZhLml0L2NybC9BbG1hdml2QSUy
+  MFJvb3RDQS5jcmyGMWh0dHA6Ly9jcmwyLmFsbWF2aXZhLml0L2NybC9BbG1hdml2
+  QSUyMFJvb3RDQS5jcmwwgY0GCCsGAQUFBwEBBIGAMH4wPQYIKwYBBQUHMAKGMWh0
+  dHA6Ly9jcmwxLmFsbWF2aXZhLml0L2FpYS9BbG1hdml2QSUyMFJvb3RDQS5jcnQw
+  PQYIKwYBBQUHMAKGMWh0dHA6Ly9jcmwyLmFsbWF2aXZhLml0L2FpYS9BbG1hdml2
+  QSUyMFJvb3RDQS5jcnQwDQYJKoZIhvcNAQELBQADggIBADnm2c/D8gan2quagGha
+  nDVgyMFmW7+fK3vf+4IefsL2/Qs5aOPllUwSE4U2EV0mF4Y5OM9MR446ydyaheGs
+  hzMLbhA00szJZBYf9V2ph4jFPdq7s9go5q/vR/JYEweXtTBABeO54dkxtgpP9FdV
+  AWiCnvW7UMl94UAWJ14uinWoeruGkWQFoF9HRHfnmGMkSRNybJESKlDhVcNSLQKr
+  RBf4CWQY9phEGFP4G+hXumwiMLXSC70pk8I1aHthnTRqYFSKg0GmQtYBWVNzCKl4
+  DtpmWamKvEB/bs/3duiHZUEAr6eCl8JwutQPZ2lpZrP6/Bk7V5XAppJ7YR9hsCy0
+  cbL8YCQ0/E4+Kd+Fb02ZVxSzZpxDpQpAZcb/wY5jvfUqYsbwb0Tlsc3RnQKmpfxw
+  aTRCbi+7HcSVnrDWhM8Sr74T+21kL+530pSjNyltkp39Q9G/FXgMe5TmaCrgUgPD
+  4cHMhy/PT+Y/EmTKmTi2DbJvfckZf4wpZx2fixXDNhpFhk/Dc6sQxNjGZxiwb30x
+  XvjRj31PI0+n5AliBZC0WkC6wM0pInLTSYnAsyO6rc8PhlVml7OmTlpEwMmp8+zj
+  PGwHUmqYrxrN7L697cqRSwCfyaJwQm/KdehPKQyRMtoJMVzmmpMZXUIzR6lkJLv2
+  iGXt1ji5XgfwHBkPWE/ROU1X
+  -----END CERTIFICATE-----
+  -----BEGIN CERTIFICATE-----
+  MIIFDzCCAvegAwIBAgIQajVY4NSUx7pP/yWSIT4lMjANBgkqhkiG9w0BAQsFADAa
+  MRgwFgYDVQQDEw9BbG1hdml2QSBSb290Q0EwHhcNMTcwNDEwMTE1NjQzWhcNMzcw
+  NDEwMTIwNjQyWjAaMRgwFgYDVQQDEw9BbG1hdml2QSBSb290Q0EwggIiMA0GCSqG
+  SIb3DQEBAQUAA4ICDwAwggIKAoICAQDhYTNwentqg7o1wIglczD9yqWKlWkEDr6+
+  xngCFJGO3rCw9WWdXvCUS9sPZbe2TRjhIEixzBMyxqIVvsRBlXZ7RiehWq9JhUUR
+  9MwbzBiV8UpUxior1D1YrHiTj+NJUCn/I2l0QH22g9eT5XdtWy743xyYuswMSWen
+  RkbVeKTNqpsu1x32cdUgBLEUp8a9jmrEQLpVo2WfQFNnOs2AOJYMiyZF88BC4DQn
+  Wvc2exTdI1jJYvV4ZLtcSbe7usuWhIbtdOLaIUfQhxKHkB9+7QLweI+MiHDw4Mdi
+  vEa1QACY+7JcIywsjyUvEBgMfYU+xRIzGc651kn/iVC8sgLQ0M5/uybBPUqJDFrP
+  wyo5ZTRO63tSemrJhx/2gvNsf0xyY+2ktobXY9ZI1i+6nb2HWFYqi32i5p4BKCDy
+  5AOgWeUssSh9uVnhe1QtugGntxJC6xlgat0c7W5lnKv6t1uVcsprts39RzezFyYD
+  9oZMV61/VZLfaGdwQjOVMiDdcSzN5wHfFU0ws+s1LcmfLmoKrWqZZyMU+Z/fCGAG
+  aeyOfedRQwSYWDji3CBobB1KFXlUjaxOj9QIN3j0U3QIbwYLPRRCKK42LR3kHugJ
+  FPMI3p745hOTCMTZh24+yZBnE6tchyv9GwnQ2NqnpUc33HrLCDiYRAkRB1eka74V
+  vd0kgAP+BwIDAQABo1EwTzALBgNVHQ8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAd
+  BgNVHQ4EFgQUHpvShhClf5N7mORvDa4OHv/iCd0wEAYJKwYBBAGCNxUBBAMCAQAw
+  DQYJKoZIhvcNAQELBQADggIBANUjjujEGqFB/TBJf5VWTYKByLm0DUYcJXZri6sB
+  oMi5GhxW40F60J2azA4sp7zehBoZMz1YCw4X0ClvJJgA3uwvR3KmTaprhW2JMEQd
+  sh0Vd5nnCAVmwyikhC3ry6BuLxCzJN27spwwKQVRsVscfJiXAgaLEKLbwp9Zn5Ex
+  y8p0g68bpatODDgzMmFxG3kT9xka+77qOSNWDecUvt60wTjWClVmxrrNZ7Tga7mG
+  VTDh4R598UgvT+oEUIlnUwV+ohnu/s1c8qqx5/CBe7njSbRUpzA/QxjMByT5ANbK
+  60p0VmDEgFJFXJjEjYjmOqiSgucWoP4q5JlkwKpK6SuJjPXzniozXZfuc/zGdgCx
+  qP1ct7rNsrSoAr9qAcooPtCsG/tX7GiGir+0/Hnl3SD5aZuuGo6CwnJZMVlMFzj+
+  eeEg08xNRtPZFwIMp2nM8swENeO+lz8KaNmuqdB+yJYpeCHhoSoRXbFaBD33z5dV
+  Ur4bx/Kl7ySvGZaVzKEQynK2hek5fY6FiJnpaIcuSR/Q4Lh1xOmKyVj2vY1otSOu
+  Ng8ObNSrcQ/OwBbpd/tRgCuYFBIwFoNDMuMjSwrfsOBM+hASlr9vN2CUXpvsFCHz
+  m0P4+YOljLCYqJ8UG7366AwRBEMM9yZp966KtEUx9wscZO4SVdwNpMcX5eADlfzT
+  PfRr
+  -----END CERTIFICATE-----
