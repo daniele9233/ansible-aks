@@ -1,16 +1,38 @@
+================================================================================
+HOW-TO — ansible-aks (Install Rancher su AKS)
+================================================================================
 
 Controller: VM Linux gia' autenticata (az login + kubeconfig in ~/.kube/config).
 Obiettivo: deploy cert-manager + Rancher su cluster AKS gia' esistente.
 
 
+--------------------------------------------------------------------------------
+1) BOOTSTRAP (una volta sola)
+--------------------------------------------------------------------------------
+
+Sostituire placeholder in group_vars/all.yml se necessari:
+    rancher_hostname, rancher_chart_version, cert_manager_chart_version
+
+Sostituire bootstrap password reale in group_vars/all/vault.yml:
+    vault_rancher_bootstrap_password: "PASSWORD_REALE_QUI"
+
+Installare collection ansible:
+    ansible-galaxy collection install -r requirements.yml
+
+Verificare prerequisiti Python (nel venv ~/ansible-env/):
+    pip install "kubernetes>=24.2.0"
+
+
+--------------------------------------------------------------------------------
+2) VAULT — gestione password (OBBLIGATORIO prima del run)
+--------------------------------------------------------------------------------
 
 Cifrare il file vault:
     ansible-vault encrypt group_vars/all/vault.yml
 
-Ansible chiedera' una password VAULT 
+Ansible chiedera' una password VAULT (diversa da AdminPassword123! di Rancher!).
 Quella password vault serve poi a ogni run del playbook:
     ansible-playbook site.yml --ask-vault-pass
-
 
 Ansible decifra automaticamente a runtime quando passi --ask-vault-pass
 oppure ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass
@@ -19,7 +41,6 @@ oppure ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass
 --------------------------------------------------------------------------------
 3) DRY-RUN / SIMULAZIONE (non modifica il cluster)
 --------------------------------------------------------------------------------
-
 
  ansible-playbook site.yml --tags rancher_ca_valid --check --diff --ask-vault-pass
  ansible-playbook site.yml --tags rancher_self_signed --check --diff --ask-vault-pass
@@ -31,6 +52,290 @@ oppure ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass
 Esecuzione completa:
     ansible-playbook site.yml --ask-vault-pass
 
-
  ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass
  ansible-playbook site.yml --tags rancher_self_signed --ask-vault-pass
+
+Con verbosity per debug:
+    ansible-playbook site.yml --ask-vault-pass -v       # base
+    ansible-playbook site.yml --ask-vault-pass -vv      # info moduli
+    ansible-playbook site.yml --ask-vault-pass -vvv     # connessioni/HTTP
+
+Log:
+    ./ansible.log    (configurato in ansible.cfg, escluso da git)
+
+
+--------------------------------------------------------------------------------
+5) FLUSSO ESECUZIONE
+--------------------------------------------------------------------------------
+
+PLAY [Install Rancher on AKS]
+|
++-- ROLE: requisrment_preinstall
+|   |
+|   +-- Check helm binary           -> failed_when:false (non blocca)
+|   +-- Install helm via script     -> when helm mancante (become:true)
+|   +-- Re-verify helm after install
+|   +-- Set helm_version_str fact
+|   +-- Check kubectl binary        -> fail se mancante
+|   +-- Check Python kubernetes pkg -> fail se mancante
+|   +-- Check kubeconfig exists
+|   +-- Verify cluster reachable    -> k8s_info kind=Node
+|   +-- Get cluster K8s version
+|   +-- Pre-flight summary (debug)
+|
++-- ROLE: rancher_install
+    |
+    +-- Add Rancher helm repo       -> kubernetes.core.helm_repository
+    +-- Add Jetstack helm repo      -> idem
+    +-- Ensure namespace cattle-system
+    +-- Install cert-manager        -> helm wait=true 10m
+    +-- Wait cert-manager pods Ready -> 3 pod Running
+    +-- Install Rancher             -> helm wait=true 15m, no_log:true
+    +-- Wait Rancher rollout        -> readyReplicas == spec.replicas
+    +-- Get Rancher pods
+    +-- Installation summary (debug)
+
+
+--------------------------------------------------------------------------------
+6) VERIFICA POST-INSTALL
+--------------------------------------------------------------------------------
+
+Pod cert-manager (3 Running):
+    kubectl get pods -n cert-manager
+
+Pod Rancher (3 Running):
+    kubectl get pods -n cattle-system
+
+Helm releases:
+    helm list -A
+
+Versione Rancher installata:
+    helm get values rancher -n cattle-system
+    kubectl -n cattle-system get deploy rancher -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+Recovery bootstrap password (se persa):
+    kubectl get secret -n cattle-system bootstrap-secret \
+      -o go-template='{{.data.bootstrapPassword|base64decode}}{{ "\n" }}'
+
+Accesso UI (port-forward locale dalla VM):
+    kubectl port-forward -n cattle-system svc/rancher 8443:443
+    # poi tunnel SSH da PC client (vedi sezione 9)
+
+
+--------------------------------------------------------------------------------
+7) IDEMPOTENZA
+--------------------------------------------------------------------------------
+
+Re-run dello stesso playbook con stato invariato deve dare:
+    PLAY RECAP
+    localhost : ok=N  changed=0  failed=0
+
+Se al 2o run ci sono changed > 0, controllare:
+    - chart_version cambiata in group_vars
+    - values modificati (hostname, password, tls source)
+    - cert-manager o Rancher state drift sul cluster
+
+
+--------------------------------------------------------------------------------
+8) TROUBLESHOOTING RAPIDO
+--------------------------------------------------------------------------------
+
+"Vault format unhexlify" o "Unable to read vault":
+    -> password vault sbagliata o vault non cifrato. Re-encrypt e ritenta.
+
+"Failed to import kubernetes":
+    -> pip install kubernetes nel venv usato da ansible
+
+"helm: command not found":
+    -> il task auto-install dovrebbe gestirlo. Se fallisce:
+       become:true presente? sudo configurato? rete ok?
+
+"x509: certificate signed by unknown authority":
+    -> kubeconfig cluster con CA non trusted dal controller. Verificare
+       certificate-authority-data nel kubeconfig.
+
+"Pod rancher CrashLoopBackOff":
+    kubectl -n cattle-system describe pod -l app=rancher
+    kubectl -n cattle-system logs -l app=rancher --tail=200
+
+"Helm release already exists, error":
+    -> non dovrebbe succedere con kubernetes.core.helm state=present.
+       Se accade: helm list -A ; helm history rancher -n cattle-system
+       Fix: helm rollback o helm uninstall + re-run.
+
+Cert-manager non installa CRD:
+    kubectl get crd | grep cert-manager
+    # se vuoto -> values: crds.enabled:true presente nel task?
+
+
+--------------------------------------------------------------------------------
+9) ACCESSO ALLA CONSOLE RANCHER DA WINDOWS
+--------------------------------------------------------------------------------
+
+Il cluster AKS non ha un IP pubblico esposto direttamente raggiungibile dalla
+rete aziendale (firewall outbound). L'accesso avviene sempre tramite:
+
+    [PC Windows]
+        | SSH tunnel (porta cifrata via PEM)
+    [VM Linux azureuser@10.207.201.136]
+        | kubectl port-forward (traffico locale VM -> pod/servizio K8s)
+    [Pod/Servizio Kubernetes]
+
+Questo vale per ENTRAMBE le modalita' di deploy.
+
+
+=== MODALITA' A: Certificato self-signed (cert-manager) ===
+
+    Playbook eseguito:
+        ansible-playbook site.yml --tags rancher_self_signed --ask-vault-pass
+
+    Architettura accesso:
+        Browser -> localhost:8443 -> [SSH tunnel] -> VM:8443
+        -> [kubectl port-forward] -> svc/rancher:443 -> pod Rancher
+
+    Perche' direttamente svc/rancher?
+        Rancher gestisce il TLS internamente tramite "dynamiclistener": genera
+        da solo un certificato self-signed (non CA valida). Non c'e' un Ingress
+        Controller davanti: il pod Rancher risponde direttamente alle connessioni
+        HTTPS. Il port-forward punta quindi al Service rancher in cattle-system.
+
+    STEP 1 — SSH tunnel dal PC Windows (PowerShell o cmd):
+
+        ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" ^
+            -L 8443:localhost:8443 azureuser@10.207.201.136
+
+        Spiegazione flag:
+            -i <key>         chiave PEM della VM Azure
+            -L 8443:localhost:8443
+                             porta 8443 del PC Windows viene inoltrata a
+                             localhost:8443 della VM Linux (tunnel cifrato SSH)
+            azureuser@...    utente e IP privato della VM nel VNet Azure
+
+        Lasciare questa sessione SSH aperta per tutta la durata della sessione.
+
+    STEP 2 — Port-forward sulla VM (nella sessione SSH appena aperta):
+
+        kubectl port-forward -n cattle-system svc/rancher 8443:443
+
+        Spiegazione:
+            kubectl apre una connessione dal processo locale della VM verso
+            il Service rancher (porta 443) nel namespace cattle-system.
+            Tutto il traffico che arriva su VM:8443 viene inoltrato al pod.
+
+    STEP 3 — Apri il browser su Windows:
+
+        https://localhost:8443/login
+
+        Nota: il browser mostrera' un avviso certificato non valido (self-signed
+        generato da dynamiclistener). Clicca "Avanzate" -> "Procedi comunque".
+        Questo e' atteso con la modalita' self-signed.
+
+
+=== MODALITA' B: Certificato CA valido AlmavivA (Traefik) ===
+
+    Playbook eseguito:
+        ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass
+
+    Architettura accesso:
+        Browser -> rancher.app.iac-svil.almaviva.it:8443
+               -> [hosts file] -> 127.0.0.1:8443
+               -> [SSH tunnel] -> VM:8443
+               -> [kubectl port-forward] -> svc/traefik:443
+               -> [Traefik Ingress, TLS termination con cert AlmavivA]
+               -> pod Rancher
+
+    Perche' svc/traefik e non svc/rancher?
+        Con la modalita' CA valida, Traefik e' l'Ingress Controller che gestisce
+        il TLS: legge il Secret "tls-rancher-ingress" (contenente il certificato
+        wildcard *.app.iac-svil.almaviva.it + chiave privata) e lo presenta al
+        browser. Rancher NON gestisce piu' il TLS direttamente: si aspetta che
+        l'Ingress Controller faccia la terminazione SSL e gli passi il traffico
+        in chiaro (o via re-encrypt).
+        Se il port-forward puntasse a svc/rancher bypasserebbe Traefik e il
+        browser vedrebbe di nuovo il certificato self-signed di dynamiclistener.
+
+    STEP 1 — Modifica il file hosts di Windows (come Amministratore):
+
+        File: C:\Windows\System32\drivers\etc\hosts
+
+        Aggiungi la riga:
+            127.0.0.1   rancher.app.iac-svil.almaviva.it
+
+        Perche'?
+            Il browser deve risolvere l'FQDN rancher.app.iac-svil.almaviva.it
+            a localhost (127.0.0.1) invece che all'IP pubblico del LoadBalancer
+            Azure (20.103.21.72), che non e' raggiungibile dalla rete aziendale.
+            Il file hosts ha precedenza sul DNS di sistema.
+
+        IMPORTANTE: se in precedenza avevi la riga con 20.103.21.72, sostituiscila
+        con 127.0.0.1. Devono essere mutuamente esclusive.
+
+    STEP 2 — SSH tunnel dal PC Windows (PowerShell o cmd):
+
+        ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" ^
+            -L 8443:localhost:8443 azureuser@10.207.201.136
+
+        Identico alla modalita' A. Lasciare la sessione SSH aperta.
+
+    STEP 3 — Port-forward sulla VM (nella sessione SSH):
+
+        kubectl port-forward -n traefik svc/traefik 8443:443
+
+        Spiegazione:
+            A differenza della modalita' A, puntiamo al Service traefik nel
+            namespace traefik (porta 443). Traefik riceve la connessione TLS,
+            legge il SNI (rancher.app.iac-svil.almaviva.it) dalla Client Hello,
+            recupera il certificato AlmavivA dal Secret e lo presenta al browser.
+            Poi instrada la richiesta al pod Rancher tramite le regole Ingress.
+
+    STEP 4 — Apri il browser su Windows:
+
+        https://rancher.app.iac-svil.almaviva.it:8443
+
+        Nota: il browser mostrera' il lucchetto verde (certificato valido).
+        - Emesso a:  *.app.iac-svil.almaviva.it  (AlmavivA FMO)
+        - Emesso da: AlmavivA Sub01
+        - Validita': 31/07/2025 - 31/07/2027
+        NON usare https://localhost:8443 perche' Traefik non avrebbe un SNI
+        valido e servirebbe un certificato di default (non quello AlmavivA).
+
+
+=== RECOVERY BOOTSTRAP PASSWORD ===
+
+    In entrambe le modalita', se non ricordi la password di primo accesso:
+
+        kubectl get secret -n cattle-system bootstrap-secret \
+          -o go-template='{{.data.bootstrapPassword|base64decode}}{{ "\n" }}'
+
+
+=== RIEPILOGO DIFFERENZE ===
+
+    Parametro              Modalita' A (self-signed)         Modalita' B (CA valida)
+    ---------------------  --------------------------------  ---------------------------
+    Tag playbook           --tags rancher_self_signed        --tags rancher_ca_valid
+    Cert nel browser       Self-signed (avviso)              AlmavivA wildcard (verde)
+    Port-forward target    svc/rancher -n cattle-system      svc/traefik -n traefik
+    URL browser            https://localhost:8443/login       https://rancher.app.iac-svil.almaviva.it:8443
+    File hosts Windows     Non necessario                    127.0.0.1 rancher.app.iac-svil.almaviva.it
+    Ingress Controller     Nessuno (Rancher diretto)         Traefik (TLS termination)
+
+
+--------------------------------------------------------------------------------
+10) UNINSTALL (riferimento — non automatizzato in ansible)
+--------------------------------------------------------------------------------
+
+ATTENZIONE: irreversibile. Vedi guida operativa originale STEP D1-D7.
+
+Sintesi comandi (eseguire sulla VM):
+    helm uninstall rancher --namespace cattle-system
+    kubectl delete namespace cattle-system
+    helm uninstall cert-manager --namespace cert-manager
+    kubectl delete namespace cert-manager
+    kubectl delete crd certificaterequests.cert-manager.io \
+                       certificates.cert-manager.io \
+                       challenges.acme.cert-manager.io \
+                       clusterissuers.cert-manager.io \
+                       issuers.cert-manager.io \
+                       orders.acme.cert-manager.io
+    kubectl get crds | grep -E 'cattle|rancher|fleet' | awk '{print $1}' | xargs kubectl delete crd
+    helm repo remove rancher-stable jetstack
