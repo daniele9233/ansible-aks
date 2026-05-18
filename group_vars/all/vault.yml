@@ -1,0 +1,7 @@
+---
+# Secrets — cifrare con: ansible-vault encrypt group_vars/all/vault.yml
+# Run playbook con: ansible-playbook site.yml --ask-vault-pass
+# (o ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass)
+
+# Bootstrap password admin Rancher (primo login UI).
+vault_rancher_bootstrap_password: "AdminPassword123!"

@@ -1,0 +1,28 @@
+# Log Ansible
+ansible.log
+*.log
+*.retry
+
+# Kubeconfig — MAI committare
+*.kubeconfig
+kubeconfig*
+.kube/
+files/kubeconfig-*.yaml
+
+# Vault decifrati — MAI committare. Vault cifrato OK.
+*.vault.dec
+group_vars/**/vault.yml.dec
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Python venv locali
+.venv/
+venv/
+__pycache__/
+*.pyc

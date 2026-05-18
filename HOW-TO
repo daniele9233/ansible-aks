@@ -1,0 +1,217 @@
+================================================================================
+HOW-TO — ansible-aks (Install Rancher su AKS)
+================================================================================
+
+Controller: VM Linux gia' autenticata (az login + kubeconfig in ~/.kube/config).
+Obiettivo: deploy cert-manager + Rancher su cluster AKS gia' esistente.
+
+
+--------------------------------------------------------------------------------
+1) BOOTSTRAP (una volta sola)
+--------------------------------------------------------------------------------
+
+Sostituire placeholder in group_vars/all.yml se necessari:
+    rancher_hostname, rancher_chart_version, cert_manager_chart_version
+
+Sostituire bootstrap password reale in group_vars/all/vault.yml:
+    vault_rancher_bootstrap_password: "PASSWORD_REALE_QUI"
+
+Installare collection ansible:
+    ansible-galaxy collection install -r requirements.yml
+
+Verificare prerequisiti Python (nel venv ~/ansible-env/):
+    pip install "kubernetes>=24.2.0"
+
+
+--------------------------------------------------------------------------------
+2) VAULT — gestione password (OBBLIGATORIO prima del run)
+--------------------------------------------------------------------------------
+
+Cifrare il file vault:
+    ansible-vault encrypt group_vars/all/vault.yml
+
+Ansible chiedera' una password VAULT (diversa da AdminPassword123! di Rancher!).
+Quella password vault serve poi a ogni run del playbook:
+    ansible-playbook site.yml --ask-vault-pass
+
+Dopo l'encrypt il file inizia con:
+    $ANSIBLE_VAULT;1.1;AES256
+    <payload cifrato AES256 in esadecimale>
+
+Ansible decifra automaticamente a runtime quando passi --ask-vault-pass
+oppure ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass
+
+Comandi utili per gestire il vault:
+    ansible-vault view    group_vars/all/vault.yml   # leggi senza decifrare permanentemente
+    ansible-vault edit    group_vars/all/vault.yml   # modifica in-place (apre editor)
+    ansible-vault decrypt group_vars/all/vault.yml   # decifra su disco (uso eccezionale)
+    ansible-vault rekey   group_vars/all/vault.yml   # cambia password vault
+
+Best practice:
+    - NON committare mai il file decifrato.
+    - Il file cifrato (header $ANSIBLE_VAULT) e' safe-to-commit.
+    - Salvare la password vault in un password manager (1Password, Bitwarden).
+    - In CI/CD usare ANSIBLE_VAULT_PASSWORD_FILE puntato a secret store.
+
+
+--------------------------------------------------------------------------------
+3) DRY-RUN / SIMULAZIONE (non modifica il cluster)
+--------------------------------------------------------------------------------
+
+Syntax check (verifica YAML senza connettersi al cluster):
+    ansible-playbook site.yml --syntax-check
+
+Dry-run con diff (richiede cluster raggiungibile, NON applica modifiche):
+    ansible-playbook site.yml --check --diff --ask-vault-pass
+
+Output atteso dry-run:
+    - moduli kubernetes.core.* mostrano cosa CAMBIEREBBE (changed=N)
+    - moduli command (helm install) sono skippati in check mode
+    - nessuna modifica reale sul cluster
+
+
+--------------------------------------------------------------------------------
+4) RUN VERO
+--------------------------------------------------------------------------------
+
+Esecuzione completa:
+    ansible-playbook site.yml --ask-vault-pass
+
+Con vault password da file (no prompt):
+    ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass ansible-playbook site.yml
+
+Con verbosity per debug:
+    ansible-playbook site.yml --ask-vault-pass -v       # base
+    ansible-playbook site.yml --ask-vault-pass -vv      # info moduli
+    ansible-playbook site.yml --ask-vault-pass -vvv     # connessioni/HTTP
+
+Solo un role specifico (skippa pre-flight):
+    ansible-playbook site.yml --ask-vault-pass --tags <tag>   # solo se aggiungi tag
+
+Log:
+    ./ansible.log    (configurato in ansible.cfg, escluso da git)
+
+
+--------------------------------------------------------------------------------
+5) FLUSSO ESECUZIONE
+--------------------------------------------------------------------------------
+
+PLAY [Install Rancher on AKS]
+|
++-- ROLE: requisrment_preinstall
+|   |
+|   +-- Check helm binary           -> failed_when:false (non blocca)
+|   +-- Install helm via script     -> when helm mancante (become:true)
+|   +-- Re-verify helm after install
+|   +-- Set helm_version_str fact
+|   +-- Check kubectl binary        -> fail se mancante
+|   +-- Check Python kubernetes pkg -> fail se mancante
+|   +-- Check kubeconfig exists
+|   +-- Verify cluster reachable    -> k8s_info kind=Node
+|   +-- Get cluster K8s version
+|   +-- Pre-flight summary (debug)
+|
++-- ROLE: rancher_install
+    |
+    +-- Add Rancher helm repo       -> kubernetes.core.helm_repository
+    +-- Add Jetstack helm repo      -> idem
+    +-- Ensure namespace cattle-system
+    +-- Install cert-manager        -> helm wait=true 10m
+    +-- Wait cert-manager pods Ready -> 3 pod Running
+    +-- Install Rancher             -> helm wait=true 15m, no_log:true
+    +-- Wait Rancher rollout        -> readyReplicas == spec.replicas
+    +-- Get Rancher pods
+    +-- Installation summary (debug)
+
+
+--------------------------------------------------------------------------------
+6) VERIFICA POST-INSTALL
+--------------------------------------------------------------------------------
+
+Pod cert-manager (3 Running):
+    kubectl get pods -n cert-manager
+
+Pod Rancher (3 Running):
+    kubectl get pods -n cattle-system
+
+Helm releases:
+    helm list -A
+
+Versione Rancher installata:
+    helm get values rancher -n cattle-system
+    kubectl -n cattle-system get deploy rancher -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+Recovery bootstrap password (se persa):
+    kubectl get secret -n cattle-system bootstrap-secret \
+      -o go-template='{{.data.bootstrapPassword|base64decode}}{{ "\n" }}'
+
+Accesso UI (port-forward locale dalla VM):
+    kubectl port-forward -n cattle-system svc/rancher 8443:443
+    # poi tunnel SSH da PC client (vedi guida operativa originale, step 6-8)
+
+
+--------------------------------------------------------------------------------
+7) IDEMPOTENZA
+--------------------------------------------------------------------------------
+
+Re-run dello stesso playbook con stato invariato deve dare:
+    PLAY RECAP
+    localhost : ok=N  changed=0  failed=0
+
+Se al 2o run ci sono changed > 0, controllare:
+    - chart_version cambiata in group_vars
+    - values modificati (hostname, password, tls source)
+    - cert-manager o Rancher state drift sul cluster
+
+
+--------------------------------------------------------------------------------
+8) TROUBLESHOOTING RAPIDO
+--------------------------------------------------------------------------------
+
+"Vault format unhexlify" o "Unable to read vault":
+    -> password vault sbagliata o vault non cifrato. Re-encrypt e ritenta.
+
+"Failed to import kubernetes":
+    -> pip install kubernetes nel venv usato da ansible
+
+"helm: command not found":
+    -> il task auto-install dovrebbe gestirlo. Se fallisce:
+       become:true presente? sudo configurato? rete ok?
+
+"x509: certificate signed by unknown authority":
+    -> kubeconfig cluster con CA non trusted dal controller. Verificare
+       certificate-authority-data nel kubeconfig.
+
+"Pod rancher CrashLoopBackOff":
+    kubectl -n cattle-system describe pod -l app=rancher
+    kubectl -n cattle-system logs -l app=rancher --tail=200
+
+"Helm release already exists, error":
+    -> non dovrebbe succedere con kubernetes.core.helm state=present.
+       Se accade: helm list -A ; helm history rancher -n cattle-system
+       Fix: helm rollback o helm uninstall + re-run.
+
+Cert-manager non installa CRD:
+    kubectl get crd | grep cert-manager
+    # se vuoto -> values: crds.enabled:true presente nel task?
+
+
+--------------------------------------------------------------------------------
+9) UNINSTALL (riferimento — non automatizzato in ansible)
+--------------------------------------------------------------------------------
+
+ATTENZIONE: irreversibile. Vedi guida operativa originale STEP D1-D7.
+
+Sintesi comandi (eseguire sulla VM):
+    helm uninstall rancher --namespace cattle-system
+    kubectl delete namespace cattle-system
+    helm uninstall cert-manager --namespace cert-manager
+    kubectl delete namespace cert-manager
+    kubectl delete crd certificaterequests.cert-manager.io \
+                       certificates.cert-manager.io \
+                       challenges.acme.cert-manager.io \
+                       clusterissuers.cert-manager.io \
+                       issuers.cert-manager.io \
+                       orders.acme.cert-manager.io
+    kubectl get crds | grep -E 'cattle|rancher|fleet' | awk '{print $1}' | xargs kubectl delete crd
+    helm repo remove rancher-stable jetstack

@@ -1,0 +1,13 @@
+---
+# Entrypoint orchestrator.
+# Sequenza:
+#   1. requisrment_preinstall -> verifica binari + cluster reachable
+#   2. rancher_install        -> deploy cert-manager + Rancher
+- name: Install Rancher on AKS
+  hosts: localhost
+  gather_facts: no
+  roles:
+    - role: requisrment_preinstall
+      tasks_from: requisiti.yml
+    - role: rancher_install
+      tasks_from: 00-rancher-install.yml

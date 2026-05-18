@@ -1,0 +1,127 @@
+---
+# Install Rancher on AKS cluster.
+# Controller gia' autenticato (az login + kubeconfig in {{ kubeconfig_path }}).
+# Sequenza segue guida operativa (step 1-5):
+#   1. helm repo add rancher-stable + jetstack
+#   2. namespace cattle-system
+#   3. install cert-manager (con CRDs)
+#   4. install Rancher
+#   5. verifica rollout
+
+# ---------------------------------------------------------------------------
+# STEP 1 — Helm repositories
+# ---------------------------------------------------------------------------
+- name: Add Rancher helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ rancher_helm_repo_name }}"
+    repo_url: "{{ rancher_helm_repo_url }}"
+    state: present
+
+- name: Add Jetstack helm repository (cert-manager)
+  kubernetes.core.helm_repository:
+    name: "{{ cert_manager_helm_repo_name }}"
+    repo_url: "{{ cert_manager_helm_repo_url }}"
+    state: present
+
+# ---------------------------------------------------------------------------
+# STEP 2 — Namespace cattle-system
+# ---------------------------------------------------------------------------
+- name: Ensure namespace "{{ rancher_namespace }}" exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rancher_namespace }}"
+
+# ---------------------------------------------------------------------------
+# STEP 3 — Install cert-manager
+# ---------------------------------------------------------------------------
+- name: Install / upgrade cert-manager Helm release
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    name: cert-manager
+    chart_ref: "{{ cert_manager_chart_ref }}"
+    chart_version: "{{ cert_manager_chart_version }}"
+    release_namespace: "{{ cert_manager_namespace }}"
+    create_namespace: true
+    values:
+      crds:
+        enabled: true
+    state: present
+    wait: true
+    timeout: "10m0s"
+    update_repo_cache: true
+
+- name: Wait for cert-manager pods to be Ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Pod
+    namespace: "{{ cert_manager_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/instance=cert-manager"
+  register: cm_pods
+  retries: 30
+  delay: 10
+  until:
+    - cm_pods.resources | length >= 3
+    - cm_pods.resources | map(attribute='status.phase', default='') | unique | list == ['Running']
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Install Rancher
+# ---------------------------------------------------------------------------
+- name: Install / upgrade Rancher Helm release
+  no_log: true
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    name: rancher
+    chart_ref: "{{ rancher_chart_ref }}"
+    chart_version: "{{ rancher_chart_version }}"
+    release_namespace: "{{ rancher_namespace }}"
+    create_namespace: false
+    values:
+      hostname: "{{ rancher_hostname }}"
+      bootstrapPassword: "{{ rancher_bootstrap_password }}"
+      ingress:
+        tls:
+          source: "{{ rancher_ingress_tls_source }}"
+    state: present
+    wait: true
+    timeout: "15m0s"
+    update_repo_cache: true
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Verifica rollout
+# ---------------------------------------------------------------------------
+- name: Wait for Rancher deployment rollout
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Deployment
+    name: rancher
+    namespace: "{{ rancher_namespace }}"
+  register: rancher_deploy
+  retries: 60
+  delay: 10
+  until:
+    - rancher_deploy.resources | length > 0
+    - rancher_deploy.resources[0].status.readyReplicas | default(0) == rancher_deploy.resources[0].spec.replicas
+
+- name: Get Rancher pods
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Pod
+    namespace: "{{ rancher_namespace }}"
+    label_selectors:
+      - "app=rancher"
+  register: rancher_pods
+
+- name: Installation summary
+  ansible.builtin.debug:
+    msg:
+      - "Rancher {{ rancher_chart_version }} installed in namespace '{{ rancher_namespace }}'"
+      - "Hostname: {{ rancher_hostname }}"
+      - "Replicas ready: {{ rancher_deploy.resources[0].status.readyReplicas | default(0) }}/{{ rancher_deploy.resources[0].spec.replicas }}"
+      - "Pods: {{ rancher_pods.resources | length }} ({{ rancher_pods.resources | map(attribute='status.phase') | list }})"
+      - "Bootstrap password recovery: kubectl get secret -n {{ rancher_namespace }} bootstrap-secret -o go-template='{% raw %}{{.data.bootstrapPassword|base64decode}}{% endraw %}'"
