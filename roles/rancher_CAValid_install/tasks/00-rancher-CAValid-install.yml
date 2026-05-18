@@ -1,0 +1,127 @@
+---
+# Installa Rancher con certificato CA valido (wildcard *.app.iac-svil.almaviva.it).
+# NON richiede cert-manager: il Secret TLS viene pre-creato dalle variabili vault.
+#
+# Pre-requisiti:
+#   1. group_vars/all/vault_cavalid.yml deve essere CIFRATO con ansible-vault
+#      e contenere vault_rancher_tls_key + vault_rancher_tls_crt_chain (fullchain completo)
+#   2. Il fullchain in vault_rancher_tls_crt_chain deve avere:
+#        [1] Certificato dominio  (*.app.iac-svil.almaviva.it)
+#        [2] Certificato intermediate (AlmavivA Sub01) -- vedi SETUP-FULLCHAIN.md
+#        [3] Root CA              -- vedi SETUP-FULLCHAIN.md
+#
+# Esecuzione:
+#   ansible-playbook site.yml --tags rancher_ca_valid --vault-password-file .vault_pass
+
+# ---------------------------------------------------------------------------
+# STEP 1 — Helm repository Rancher
+# ---------------------------------------------------------------------------
+- name: Add Rancher helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ rancher_helm_repo_name }}"
+    repo_url: "{{ rancher_helm_repo_url }}"
+    state: present
+  check_mode: false
+
+# ---------------------------------------------------------------------------
+# STEP 2 — Namespace cattle-system
+# ---------------------------------------------------------------------------
+- name: Ensure namespace "{{ rancher_namespace }}" exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rancher_namespace }}"
+
+# ---------------------------------------------------------------------------
+# STEP 3 — TLS Secret dal vault (fullchain + chiave privata)
+# ---------------------------------------------------------------------------
+- name: Create / update TLS secret "{{ rancher_tls_secret_name }}"
+  no_log: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ rancher_tls_secret_name }}"
+        namespace: "{{ rancher_namespace }}"
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ vault_rancher_tls_crt_chain | b64encode }}"
+        tls.key: "{{ vault_rancher_tls_key | b64encode }}"
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Installa Rancher (tls.source = secret -> usa il secret pre-creato)
+# ---------------------------------------------------------------------------
+- name: Install / upgrade Rancher Helm release (CA valid cert)
+  no_log: true
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    name: rancher
+    chart_ref: "{{ rancher_chart_ref }}"
+    chart_version: "{{ rancher_chart_version }}"
+    release_namespace: "{{ rancher_namespace }}"
+    create_namespace: false
+    values:
+      hostname: "{{ rancher_hostname }}"
+      bootstrapPassword: "{{ rancher_bootstrap_password }}"
+      ingress:
+        tls:
+          source: "secret"
+    state: present
+    wait: true
+    timeout: "15m0s"
+    update_repo_cache: true
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Verifica rollout
+# ---------------------------------------------------------------------------
+- name: Wait for Rancher deployment rollout
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Deployment
+    name: rancher
+    namespace: "{{ rancher_namespace }}"
+  register: rancher_deploy
+  retries: 60
+  delay: 10
+  until:
+    - rancher_deploy.resources | length > 0
+    - rancher_deploy.resources[0].status.readyReplicas | default(0) == rancher_deploy.resources[0].spec.replicas
+  when: not ansible_check_mode
+
+- name: Get Rancher pods
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Pod
+    namespace: "{{ rancher_namespace }}"
+    label_selectors:
+      - "app=rancher"
+  register: rancher_pods
+  when: not ansible_check_mode
+
+- name: Installation summary (check mode / dry-run)
+  ansible.builtin.debug:
+    msg:
+      - "[DRY-RUN COMPLETATO]"
+      - "Rancher {{ rancher_chart_version }} sarebbe installato in '{{ rancher_namespace }}'"
+      - "Hostname: {{ rancher_hostname }}"
+      - "TLS: certificato CA valido dal secret '{{ rancher_tls_secret_name }}'"
+      - "Re-runnare SENZA --check per applicare le modifiche."
+  when: ansible_check_mode
+
+- name: Installation summary
+  ansible.builtin.debug:
+    msg:
+      - "Rancher {{ rancher_chart_version }} installed in namespace '{{ rancher_namespace }}'"
+      - "Hostname: {{ rancher_hostname }}"
+      - "TLS secret: {{ rancher_tls_secret_name }} (CA valida -- *.app.iac-svil.almaviva.it)"
+      - "Replicas ready: {{ rancher_deploy.resources[0].status.readyReplicas | default(0) }}/{{ rancher_deploy.resources[0].spec.replicas }}"
+      - "Pods: {{ rancher_pods.resources | length }} ({{ rancher_pods.resources | map(attribute='status.phase') | list }})"
+      - "Bootstrap password recovery: kubectl get secret -n {{ rancher_namespace }} bootstrap-secret -o go-template='{% raw %}{{.data.bootstrapPassword|base64decode}}{% endraw %}'"
+  when: not ansible_check_mode

@@ -12,6 +12,8 @@ files/kubeconfig-*.yaml
 # Vault decifrati — MAI committare. Vault cifrato OK.
 *.vault.dec
 group_vars/**/vault.yml.dec
+# Protezione extra: blocca vault_cavalid.yml se NON inizia con $ANSIBLE_VAULT
+# (il git hook pre-commit nel HOW-TO verifica la riga 1 prima del push)
 
 # Editor / OS
 .idea/

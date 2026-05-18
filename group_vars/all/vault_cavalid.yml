@@ -1,0 +1,99 @@
+---
+# =============================================================================
+# ATTENZIONE: QUESTO FILE DEVE ESSERE CIFRATO PRIMA DI QUALSIASI COMMIT GIT
+#
+#   ansible-vault encrypt group_vars/all/vault_cavalid.yml
+#
+# Per modificarlo in seguito:
+#   ansible-vault edit group_vars/all/vault_cavalid.yml
+#
+# Verificare che sia cifrato prima del commit:
+#   head -1 group_vars/all/vault_cavalid.yml   # deve iniziare con $ANSIBLE_VAULT
+# =============================================================================
+
+# --- Chiave privata RSA 2048 ---
+# MD5 modulus (verifica corrispondenza con il certificato): 87e255f74ee13283cf9817409230f4a5
+vault_rancher_tls_key: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCgTvB5qQec9WPQ
+  loP3xZc0Q9ivzVupGkj2DpqKfFl5qmA4llkCdSYTOmAGm8ra+EUKjsBnbV8RA4gT
+  KSk83zYXzN50UlXZuv60MmWtkmmIdxVsV92SyP2BM3FM4A9PiicwWEQhf9F4bp57
+  MGhIMVXpkagdubwgnP5Xe2idJaSOriOB94m3MMLKNg0wPeI3QQjF192YufsToIu/
+  wTHO8YT6wveFo3LwnB7aiEZYAtJwLT6xKstC+6Jv16DlxIABkJjoHybzKWpb/3x7
+  2CjIegEyeXgivwz62b9sa9Bg1FMlAZW0fpjJn2LZQrH97EFQLuFFel7oCJlonEa9
+  w1MuuF/pAgMBAAECggEAL22bdQsezv/E47ocWipx5UsraTvjIgE+U9oXO+C1YisX
+  o7ZLqE/7j1XGgj4GgslQN+LrJs5zgWefkzeq1TEe4mTA7f5MGwpZf/unHHbEVVUS
+  GAdY7Swc4GRVYY6qyPgRRxreMWENGsnzhnPYbn92MQ/ggsboU2fPUheXaGLyMCn6
+  LEjXMAt2cmBysGbVBkVHsdwjm8hYRL3Di1dkXe0iArWUtWmF3RtX1q2DNsCHA94R
+  UA5xDNtZpkEeunr+bKpl6UjExLzvRvVVbzF7+NnU1YJWGXVS4C9x/Y0pShkp/I0J
+  Zh04szZr9IBWop+ZehMSilUL2LAgIf955q26eS1QVwKBgQDS8CiPxduJd9SB3O8x
+  EZdoRvr+kJpH3y6Oa78wTlcATsWd8qPHzybGZSmEpQ5Avf/KNr5vbvaHvBob07FV
+  8e0m+6YjevwvstE5ELHxfI88pPvpz9RSPAgVQ8HlH8J7IrQIf7ypHMjjnbMJ/eNA
+  gCRYIwolq4d8Ml3KGpSInmvYswKBgQDCje033cwLbHH3ykyiHue9suQ4GABGsdcu
+  K91pM4fsMTT5rkXpWSVgJHG2BHlmtVat1ky8bkddFDRjCCm+IzHJKQhYSRrvp+lp
+  N+wxcXSyg0uj92NSS9ECQYyoFJN9X788o6XtsF/rH0bCtCkw2Xy9hM5svq4PP4Er
+  iSvOLQqa8wKBgCscLg4EL/QOa34G+1OZ9sm3CAES6JUbxdYRq0diG2HSt4yqVFK3
+  wYL2ld+oJBuTOT3Ipm77zKK9DND3GN0pzoATGkdSEUxmTWBOSy/Bdzy7s0h70zbj
+  UfuWl4AOV5723riF8rbVTTFHv5mhK9q41bS1pJNCVTRKzuRJPmYVipEFAoGBAJ3D
+  qVFcMlIxJlnhWjM9DH7vydES5WZuYCe4ulrMxrPpUyQFBfwrpftIkk0fY7K96gQd
+  eyxx4LzB3ZlQzUi6EW0mMPYmkgk1CDmid43AivkXLwdPXOMnR92kegLybIeGVPU/
+  XxZXp/Bp9F9+6MgMFPM59oqINW13+a7sFPGj5K2xAoGAITAVJ1xkAx34V9Pcu798
+  1ujPDVheWqOF6rweCqydne8CDmGFZMknIVe7FyAiw2UMIjkyLdqUmtR4YnEGHTKt
+  7F2HPjrHzwFHtrLWnc/49RRwnpOTzdAGvNo4v9EbR/UXKv9Gk5Y5gL3CKzr3NMji
+  DQc1bnzlFT1Z38rkZK4BzJE=
+  -----END PRIVATE KEY-----
+
+# --- Fullchain certificato TLS ---
+# Ordine obbligatorio: [1] leaf → [2] intermediate → [3] rootCA
+#
+# [1] Certificato dominio: *.app.iac-svil.almaviva.it
+#     CN=*.app.iac-svil.almaviva.it | Issuer: AlmavivA Sub01
+#     Valido: 2025-07-31 → 2027-07-31
+#     MD5 modulus: 87e255f74ee13283cf9817409230f4a5
+#
+# [2] Intermediate: AlmavivA Sub01 -- DA AGGIUNGERE (vedi SETUP-FULLCHAIN.md)
+# [3] Root CA                      -- DA AGGIUNGERE (vedi SETUP-FULLCHAIN.md)
+vault_rancher_tls_crt_chain: |
+  -----BEGIN CERTIFICATE-----
+  MIIFhDCCBGygAwIBAgITFgAAArrBDiAAnS1e4wABAAACujANBgkqhkiG9w0BAQsF
+  ADBKMRUwEwYKCZImiZPyLGQBGRYFbG9jYWwxGDAWBgoJkiaJk/IsZAEZFghpdG1h
+  c3RlcjEXMBUGA1UEAxMOQWxtYXZpdkEgU3ViMDEwHhcNMjUwNzMxMTQzODQ1WhcN
+  MjcwNzMxMTQzODQ1WjCBuTELMAkGA1UEBhMCSVQxDTALBgNVBAgTBFJvbWUxDTAL
+  BgNVBAcTBFJvbWUxOTA3BgNVBAoTMEFsbWF2aXZBIC0gVGhlIEl0YWxpYW4gSW5u
+  b3ZhdGlvbiBDb21wYW55IFMucC5BLjEMMAoGA1UECxMDRk1PMSMwIQYDVQQDDBoq
+  LmFwcC5pYWMtc3ZpbC5hbG1hdml2YS5pdDEeMBwGCSqGSIb3DQEJARYPZm1vQGFs
+  bWF2aXZhLml0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoE7weakH
+  nPVj0JaD98WXNEPYr81bqRpI9g6ainxZeapgOJZZAnUmEzpgBpvK2vhFCo7AZ21f
+  EQOIEykpPN82F8zedFJV2br+tDJlrZJpiHcVbFfdksj9gTNxTOAPT4onMFhEIX/R
+  eG6eezBoSDFV6ZGoHbm8IJz+V3tonSWkjq4jgfeJtzDCyjYNMD3iN0EIxdfdmLn7
+  E6CLv8ExzvGE+sL3haNy8Jwe2ohGWALScC0+sSrLQvuib9eg5cSAAZCY6B8m8ylq
+  W/98e9goyHoBMnl4Ir8M+tm/bGvQYNRTJQGVtH6YyZ9i2UKx/exBUC7hRXpe6AiZ
+  aJxGvcNTLrhf6QIDAQABo4IB8TCCAe0wCwYDVR0PBAQDAgWgMBMGA1UdJQQMMAoG
+  CCsGAQUFBwMBMCUGA1UdEQQeMByCGiouYXBwLmlhYy1zdmlsLmFsbWF2aXZhLml0
+  MB0GA1UdDgQWBBQoNwhsYaaae9NaP2j5SJKf9FjJNzAfBgNVHSMEGDAWgBRLdxgb
+  c5BP+dlm9fhTo7pZWNGilTBzBgNVHR8EbDBqMGigZqBkhjBodHRwOi8vY3JsMS5h
+  bG1hdml2YS5pdC9jcmwvQWxtYXZpdkElMjBTdWIwMS5jcmyGMGh0dHA6Ly9jcmwy
+  LmFsbWF2aXZhLml0L2NybC9BbG1hdml2QSUyMFN1YjAxLmNybDCBkgYIKwYBBQUH
+  AQEEgYUwgYIwPwYIKwYBBQUHMAKGM2h0dHA6Ly9jcmwxLmFsbWF2aXZhLml0L2Fp
+  YS9BbG1hdml2QSUyMFN1YjAxKDEpLmNydDA/BggrBgEFBQcwAoYzaHR0cDovL2Ny
+  bDIuYWxtYXZpdmEuaXQvYWlhL0FsbWF2aXZBJTIwU3ViMDEoMSkuY3J0MDsGCSsG
+  AQQBgjcVBwQuMCwGJCsGAQQBgjcVCOGyCoag2FmEyZc5g9DiAYPOskEehfXGBLy+
+  UgIBZAIBFDAbBgkrBgEEAYI3FQoEDjAMMAoGCCsGAQUFBwMBMA0GCSqGSIb3DQEB
+  CwUAA4IBAQCtGtaNct2C2+vmQywH2o/f0iRSKoJlRDB41/gBEd3CtBv5mjiBw83Q
+  ekcYvIsytJ/TCI6IVYHzrfTAXJ7CbuPImH9sgE0Q0Zw7/HUqicfLjG1x2qsUBhqR
+  qDzndEuu9vMHv8BNjrKjCJYbeGozLxElShJK6joOEgZpQK+6LtybGLAtDnLv/M81
+  k8bgOjtDy43KT3uKhelxqDE712F2QrQbyd59/Vjp8fcBdWGNjXeOMXezv9hr9Urg
+  p1e3lf4a0VlOmX/Rxb0eNaEc8wzTGUfERK+lZ+VyjIhP+vlPt79+CP3+k2xGJfh4
+  rg6rn5XozFbr6yqBY1QgwXHuyYJ/+V4v
+  -----END CERTIFICATE-----
+  # =========================================================
+  # [2] INTERMEDIATE: AlmavivA Sub01
+  # Aggiungere qui il blocco PEM dell'intermediate.
+  # Vedere roles/rancher_CAValid_install/files/SETUP-FULLCHAIN.md
+  # =========================================================
+  #
+  # =========================================================
+  # [3] ROOT CA: AlmavivA Root
+  # Aggiungere qui il blocco PEM della rootCA.
+  # Vedere roles/rancher_CAValid_install/files/SETUP-FULLCHAIN.md
+  # =========================================================
