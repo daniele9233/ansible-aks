@@ -16,12 +16,14 @@
     name: "{{ rancher_helm_repo_name }}"
     repo_url: "{{ rancher_helm_repo_url }}"
     state: present
+  check_mode: false
 
 - name: Add Jetstack helm repository (cert-manager)
   kubernetes.core.helm_repository:
     name: "{{ cert_manager_helm_repo_name }}"
     repo_url: "{{ cert_manager_helm_repo_url }}"
     state: present
+  check_mode: false
 
 # ---------------------------------------------------------------------------
 # STEP 2 — Namespace cattle-system
