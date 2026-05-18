@@ -6,8 +6,13 @@
 - name: Install Rancher on AKS
   hosts: localhost
   gather_facts: no
-  roles:
-    - role: requisrment_preinstall
-      tasks_from: requisiti.yml
-    - role: rancher_install
-      tasks_from: 00-rancher-install.yml
+  tasks:
+    - name: Pre-installation checks
+      ansible.builtin.import_role:
+        name: requisrment_preinstall
+        tasks_from: requisiti.yml
+
+    - name: Install Rancher
+      ansible.builtin.import_role:
+        name: rancher_install
+        tasks_from: 00-rancher-install.yml
