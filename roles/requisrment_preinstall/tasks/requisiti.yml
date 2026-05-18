@@ -2,12 +2,14 @@
 # Pre-installation checks. Read-only, idempotenti.
 # Verifica binari + connettivita' cluster + Python deps richiesti
 # da kubernetes.core.
+# check_mode: no sui check read-only -> eseguono anche in --check mode.
 
 - name: Check helm binary present
   ansible.builtin.command: helm version --short
   register: helm_check
   changed_when: false
   failed_when: false
+  check_mode: no
 
 - name: Install helm via script ufficiale (se mancante)
   ansible.builtin.shell: |
@@ -26,22 +28,25 @@
   changed_when: false
   failed_when: helm_check_after.rc != 0
   when: helm_check.rc != 0
+  check_mode: no
 
 - name: Set helm version fact
   ansible.builtin.set_fact:
-    helm_version_str: "{{ helm_check_after.stdout | default(helm_check.stdout) }}"
+    helm_version_str: "{{ helm_check_after.stdout | default(helm_check.stdout | default('unknown')) }}"
 
 - name: Check kubectl binary present
   ansible.builtin.command: kubectl version --client
   register: kubectl_check
   changed_when: false
   failed_when: kubectl_check.rc != 0
+  check_mode: no
 
 - name: Check Python `kubernetes` package importable
   ansible.builtin.command: "{{ ansible_python_interpreter | default('python3') }} -c \"import kubernetes; print(kubernetes.__version__)\""
   register: py_k8s_check
   changed_when: false
   failed_when: py_k8s_check.rc != 0
+  check_mode: no
 
 - name: Check kubeconfig file exists
   ansible.builtin.stat:
@@ -61,6 +66,7 @@
   register: kubectl_version_raw
   changed_when: false
   failed_when: kubectl_version_raw.rc != 0
+  check_mode: no
 
 - name: Parse server version
   ansible.builtin.set_fact:
