@@ -54,9 +54,44 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 4 — Installa Rancher (tls.source = secret -> usa il secret pre-creato)
+# STEP 3.5 — Rileva se il wizard di bootstrap è già stato completato.
+# Rancher imposta il Setting "first-login" a "false" dopo il primo accesso.
+# Se è già "false" il playbook evita di passare bootstrapPassword a Helm,
+# impedendo il reset del wizard ad ogni re-run.
 # ---------------------------------------------------------------------------
-- name: Install / upgrade Rancher Helm release (CA valid cert)
+- name: Check Rancher first-login setting
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    api_version: management.cattle.io/v3
+    kind: Setting
+    name: first-login
+  register: _rancher_first_login
+  ignore_errors: true
+  when: not ansible_check_mode
+
+- name: Set rancher_configured fact
+  ansible.builtin.set_fact:
+    rancher_configured: >-
+      {{
+        _rancher_first_login.resources | default([]) | length > 0 and
+        (_rancher_first_login.resources[0].value | default('true')) == 'false'
+      }}
+  when: not ansible_check_mode
+
+- name: Rancher bootstrap status
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'Rancher già configurato — upgrade senza bootstrapPassword (wizard protetto)'
+        if rancher_configured | default(false)
+        else 'Prima installazione — bootstrapPassword inclusa nei valori Helm'
+      }}
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4a — Prima installazione: include bootstrapPassword
+# ---------------------------------------------------------------------------
+- name: Install Rancher Helm release — first time
   no_log: true
   kubernetes.core.helm:
     kubeconfig: "{{ kubeconfig_path | expanduser }}"
@@ -73,16 +108,42 @@
         tls:
           source: "secret"
         extraAnnotations:
-          # Compat per chart che non rendono ingressClassName
           kubernetes.io/ingress.class: "traefik"
-          # Routing Traefik: solo entrypoint HTTPS + TLS attivo
           traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
           traefik.ingress.kubernetes.io/router.tls: "true"
     state: present
     wait: true
     timeout: "15m0s"
     update_repo_cache: true
-  when: not ansible_check_mode
+  when: not ansible_check_mode and not (rancher_configured | default(false))
+
+# ---------------------------------------------------------------------------
+# STEP 4b — Upgrade su installazione già configurata: NO bootstrapPassword
+# ---------------------------------------------------------------------------
+- name: Upgrade Rancher Helm release — already configured
+  no_log: true
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    name: rancher
+    chart_ref: "{{ rancher_chart_ref }}"
+    chart_version: "{{ rancher_chart_version }}"
+    release_namespace: "{{ rancher_namespace }}"
+    create_namespace: false
+    values:
+      hostname: "{{ rancher_hostname }}"
+      ingress:
+        ingressClassName: "traefik"
+        tls:
+          source: "secret"
+        extraAnnotations:
+          kubernetes.io/ingress.class: "traefik"
+          traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+          traefik.ingress.kubernetes.io/router.tls: "true"
+    state: present
+    wait: true
+    timeout: "15m0s"
+    update_repo_cache: true
+  when: not ansible_check_mode and (rancher_configured | default(false))
 
 # ---------------------------------------------------------------------------
 # STEP 5 — Verifica rollout
