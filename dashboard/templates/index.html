@@ -855,10 +855,13 @@ const state = {
   lastSeenLines: 0,
   status: 'idle',
   currentJobId: null,
+  currentAction: null,
+  jobStartTime: null,
   lines: [],   // all session lines for activity log
   jobs: [],
   termInstances: [], // mounted terminal panels
 };
+let _timerInterval = null;
 
 /* ============================================================
    ROUTING
@@ -1035,6 +1038,7 @@ function copyTerminal(btn) {
 
 function setRunningStatus(status, action) {
   state.status = status;
+  if (action) state.currentAction = action;
   const map = {
     idle:    ['badge-pend','idle'],
     running: ['badge-run','running'],
@@ -1046,7 +1050,6 @@ function setRunningStatus(status, action) {
   state.termInstances.forEach(t => {
     t.status.className = 'badge ' + cls + (status==='running' ? ' pulse' : '');
     t.status.querySelector('.t').textContent = label;
-    if (action) t.action.textContent = action;
   });
 
   const a = $('#act-status');
@@ -1056,7 +1059,20 @@ function setRunningStatus(status, action) {
   }
 
   // last-op card
-  updateLastOpCard(status, action);
+  updateLastOpCard(status, action || state.currentAction);
+
+  // timer management
+  if (status === 'running' && action) {
+    const name = ACTION_LABEL[action]?.name || action;
+    state.termInstances.forEach(t => { t.action.textContent = `${name} · 0s`; });
+    startTimer(action);
+  } else if (status === 'success' || status === 'failed') {
+    stopTimer(state.currentAction);
+  } else if (status === 'idle') {
+    stopTimer(null);
+    state.currentAction = null;
+    state.termInstances.forEach(t => { t.action.textContent = '—'; });
+  }
 }
 
 function updateLastOpCard(status, action) {
@@ -1096,6 +1112,35 @@ function fmtRel(ts) {
   if (d < 86400) return `${Math.floor(d/3600)}h ago`;
   return `${Math.floor(d/86400)}d ago`;
 }
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${(s % 60).toString().padStart(2,'0')}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${(m % 60).toString().padStart(2,'0')}m ${(s % 60).toString().padStart(2,'0')}s`;
+}
+function startTimer(action) {
+  state.jobStartTime = Date.now();
+  if (_timerInterval) clearInterval(_timerInterval);
+  const name = ACTION_LABEL[action]?.name || action;
+  _timerInterval = setInterval(() => {
+    const elapsed = fmtElapsed(Date.now() - state.jobStartTime);
+    const label = `${name} · ${elapsed}`;
+    state.termInstances.forEach(t => { t.action.textContent = label; });
+    const opTime = $('#last-op-time');
+    if (opTime && state.status === 'running') opTime.textContent = `running · ${elapsed}`;
+  }, 1000);
+}
+function stopTimer(action) {
+  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  if (state.jobStartTime && action) {
+    const elapsed = fmtElapsed(Date.now() - state.jobStartTime);
+    const name = ACTION_LABEL[action]?.name || action;
+    state.termInstances.forEach(t => { t.action.textContent = `${name} · ${elapsed}`; });
+  }
+  state.jobStartTime = null;
+}
 
 function renderJobs() {
   const tbody = $('#jobs-tbody');
@@ -1107,13 +1152,15 @@ function renderJobs() {
     const l = ACTION_LABEL[j.action] || { name:j.action, type:'—' };
     const badge = { running:'badge-run', success:'badge-ok', failed:'badge-bad', pending:'badge-pend' }[j.status] || 'badge-pend';
     const label = { running:'Running', success:'Successful', failed:'Failed', pending:'Pending' }[j.status] || j.status;
+    const durStr = (j.startedAt && j.finishedAt) ? ` <span class="text-fg-dim">·</span> ${fmtElapsed(j.finishedAt - j.startedAt)}` : '';
+    const finCell = j.status === 'running' ? 'in progress…' : `${fmtRel(j.finishedAt)}${durStr}`;
     return `<tr>
       <td class="font-mono text-fg-mute">${j.id}</td>
       <td><div class="font-medium text-fg">${l.name}</div>
           <div class="text-[11px] text-fg-dim font-mono">${j.action}</div></td>
       <td><span class="badge ${badge} ${j.status==='running'?'pulse':''}"><span class="dot"></span>${label}</span></td>
       <td class="text-fg-mute">${l.type}</td>
-      <td class="text-fg-mute">${j.status==='running' ? 'in progress…' : fmtRel(j.finishedAt)}</td>
+      <td class="text-fg-mute">${finCell}</td>
       <td><button class="icon-btn !w-7 !h-7"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button></td>
     </tr>`;
   }).join('');

@@ -34,11 +34,11 @@ kubectl delete crd \
   clusterissuers.cert-manager.io \
   issuers.cert-manager.io \
   orders.acme.cert-manager.io \
-  --ignore-not-found
+  --ignore-not-found --wait=false
 
 # 7. CRD Rancher / Cattle / Fleet residui (per sicurezza, dopo il cleanup ufficiale)
 echo "Rimozione CRD residui di Rancher/Cattle/Fleet..."
-kubectl get crds | grep -E 'cattle|rancher|fleet' | awk '{print $1}' | xargs -r kubectl delete crd
+kubectl get crds | grep -E 'cattle|rancher|fleet' | awk '{print $1}' | xargs -r kubectl delete crd --wait=false
 
 # 8. Repository Helm locali
 echo "Rimozione dei repository Helm..."
