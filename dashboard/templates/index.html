@@ -712,28 +712,104 @@
       <!-- ============================================================== -->
       <section data-screen-label="08 SSH" data-screen="ssh" class="p-8 max-w-[1100px] hidden rise">
         <h1 class="text-[26px] font-semibold leading-tight">SSH Commands</h1>
-        <p class="text-fg-mute mt-1 mb-6 text-[14px]">Reference commands for jump-box access and kubectl context switching.</p>
+        <p class="text-fg-mute mt-1 mb-6 text-[14px]">Tre flussi di accesso: Rancher (CA Valid / Self-Signed) e Dashboard Ansible. Esegui i comandi nell'ordine indicato.</p>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div class="card p-5">
-            <div class="font-medium mb-1">SSH tunnel dashboard</div>
-            <p class="text-[12px] text-fg-mute mb-3">Espone la dashboard su http://localhost:8080. Lascia aperto questo terminale.</p>
-            <div class="code"><span><span class="a-cyn">ssh</span> -L 8080:localhost:8080 azureuser<span class="a-dim">@</span>10.207.201.136</span><button class="icon-btn !w-7 !h-7" data-copy="ssh -L 8080:localhost:8080 azureuser@10.207.201.136"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+        <!-- ========== CA VALID ========== -->
+        <div class="card p-6 mb-4">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-semibold text-[15px]">Rancher · CA Valid</h2>
+              <p class="text-[12px] text-fg-mute mt-0.5">Accesso via Traefik con certificato wildcard AlmavivA (lucchetto verde).</p>
+            </div>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-1 rounded" style="background:rgba(110,231,183,0.10); color:#6ee7b7; border:1px solid rgba(110,231,183,0.30)">cert valido</span>
           </div>
-          <div class="card p-5">
-            <div class="font-medium mb-1">Attiva ambiente Ansible</div>
-            <p class="text-[12px] text-fg-mute mb-3">Necessario prima di eseguire ansible-playbook o ansible-vault manualmente.</p>
-            <div class="code"><span><span class="a-cyn">source</span> ~/ansible-env/bin/activate</span><button class="icon-btn !w-7 !h-7" data-copy="source ~/ansible-env/bin/activate"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+
+          <div class="space-y-3">
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">1.</span> SSH tunnel · Windows PowerShell (lascia aperto)</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">ssh</span> -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8443:localhost:8443 azureuser<span class="a-dim">@</span>10.207.201.136</span><button class="icon-btn !w-7 !h-7" data-copy='ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8443:localhost:8443 azureuser@10.207.201.136'><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">2.</span> kubectl port-forward · dentro la sessione SSH della VM</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">kubectl</span> port-forward -n traefik svc/traefik 8443:443</span><button class="icon-btn !w-7 !h-7" data-copy="kubectl port-forward -n traefik svc/traefik 8443:443"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">3.</span> Browser su Windows</div>
+              <div class="code"><span class="font-mono break-all">https://rancher.app.iac-svil.almaviva.it:8443</span><button class="icon-btn !w-7 !h-7" data-copy="https://rancher.app.iac-svil.almaviva.it:8443"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
           </div>
-          <div class="card p-5">
-            <div class="font-medium mb-1">Port-forward · Self-Signed</div>
-            <p class="text-[12px] text-fg-mute mb-3">Espone Rancher su https://localhost:8443. Poi apri il browser.</p>
-            <div class="code"><span><span class="a-cyn">kubectl</span> port-forward -n cattle-system svc/rancher 8443:443</span><button class="icon-btn !w-7 !h-7" data-copy="kubectl port-forward -n cattle-system svc/rancher 8443:443"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+
+          <div class="mt-5 p-3.5 rounded-md border" style="background:rgba(192,132,252,0.06); border-color:rgba(192,132,252,0.30)">
+            <div class="flex gap-3">
+              <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5" style="color:#c084fc"></i>
+              <div class="text-[12px]">
+                <div class="font-medium" style="color:#d8b4fe">Prerequisito · file hosts Windows</div>
+                <p class="text-fg-mute mt-1">Aggiungi questa riga in <span class="font-mono text-fg">C:\Windows\System32\drivers\etc\hosts</span> (come Amministratore):</p>
+                <div class="code mt-2"><span class="font-mono"><span class="a-grn">127.0.0.1</span>&nbsp;&nbsp;rancher.app.iac-svil.almaviva.it</span><button class="icon-btn !w-7 !h-7" data-copy="127.0.0.1  rancher.app.iac-svil.almaviva.it"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+              </div>
+            </div>
           </div>
-          <div class="card p-5">
-            <div class="font-medium mb-1">Port-forward · CA Valid</div>
-            <p class="text-[12px] text-fg-mute mb-3">Espone Traefik su 8443. Poi apri https://rancher.app.iac-svil.almaviva.it:8443</p>
-            <div class="code"><span><span class="a-cyn">kubectl</span> port-forward -n traefik svc/traefik 8443:443</span><button class="icon-btn !w-7 !h-7" data-copy="kubectl port-forward -n traefik svc/traefik 8443:443"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+        </div>
+
+        <!-- ========== SELF-SIGNED ========== -->
+        <div class="card p-6 mb-4">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-semibold text-[15px]">Rancher · Self-Signed</h2>
+              <p class="text-[12px] text-fg-mute mt-0.5">Accesso diretto al servizio Rancher (TLS gestito da dynamiclistener).</p>
+            </div>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-1 rounded" style="background:rgba(245,158,11,0.10); color:#fbbf24; border:1px solid rgba(245,158,11,0.30)">self-signed</span>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">1.</span> SSH tunnel · Windows PowerShell (lascia aperto)</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">ssh</span> -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8443:localhost:8443 azureuser<span class="a-dim">@</span>10.207.201.136</span><button class="icon-btn !w-7 !h-7" data-copy='ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8443:localhost:8443 azureuser@10.207.201.136'><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">2.</span> kubectl port-forward · dentro la sessione SSH della VM</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">kubectl</span> port-forward -n cattle-system svc/rancher 8443:443</span><button class="icon-btn !w-7 !h-7" data-copy="kubectl port-forward -n cattle-system svc/rancher 8443:443"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">3.</span> Browser su Windows</div>
+              <div class="code"><span class="font-mono break-all">https://localhost:8443/login</span><button class="icon-btn !w-7 !h-7" data-copy="https://localhost:8443/login"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+          </div>
+
+          <div class="mt-5 p-3.5 rounded-md border" style="background:rgba(245,158,11,0.06); border-color:rgba(245,158,11,0.30)">
+            <div class="flex gap-3">
+              <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5" style="color:#fbbf24"></i>
+              <div class="text-[12px]">
+                <div class="font-medium" style="color:#fde68a">Avviso certificato</div>
+                <p class="text-fg-mute mt-1">Il browser mostrerà un warning di certificato non valido (atteso in modalità self-signed). Clicca <span class="text-fg">Avanzate → Procedi comunque a localhost</span>.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== DASHBOARD ANSIBLE ========== -->
+        <div class="card p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-semibold text-[15px]">Dashboard Ansible</h2>
+              <p class="text-[12px] text-fg-mute mt-0.5">Avvia e accedi a questa stessa dashboard da Windows.</p>
+            </div>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-1 rounded" style="background:rgba(96,165,250,0.10); color:#60a5fa; border:1px solid rgba(96,165,250,0.30)">controller</span>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">1.</span> Avvia la dashboard sulla VM</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">cd</span> dashboard && ./start.sh</span><button class="icon-btn !w-7 !h-7" data-copy="cd dashboard && ./start.sh"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">2.</span> SSH tunnel · Windows PowerShell (lascia aperto)</div>
+              <div class="code"><span class="font-mono break-all"><span class="a-cyn">ssh</span> -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8080:localhost:8080 azureuser<span class="a-dim">@</span>10.207.201.136</span><button class="icon-btn !w-7 !h-7" data-copy='ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" -L 8080:localhost:8080 azureuser@10.207.201.136'><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
+            <div>
+              <div class="text-[11px] text-fg-mute mb-1.5"><span class="a-dim">3.</span> Browser su Windows</div>
+              <div class="code"><span class="font-mono break-all">http://localhost:8080/#/dashboard</span><button class="icon-btn !w-7 !h-7" data-copy="http://localhost:8080/#/dashboard"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+            </div>
           </div>
         </div>
       </section>
@@ -1458,8 +1534,8 @@ function flashCopy(btn) {
    ============================================================ */
 function renderTunnel(mode) {
   const pem = $('#pem-path').value;
-  const sshBase = pem ? `ssh -i "${pem}" -L 8080:localhost:8080 azureuser@10.207.201.136`
-                       : `ssh -L 8080:localhost:8080 azureuser@10.207.201.136`;
+  const sshBase = pem ? `ssh -i "${pem}" -L 8443:localhost:8443 azureuser@10.207.201.136`
+                       : `ssh -L 8443:localhost:8443 azureuser@10.207.201.136`;
   const cmds = mode === 'self' ? [
     { title:'1. Apri SSH tunnel (lascia aperto)', cmd: sshBase },
     { title:'2. kubectl port-forward — Self-Signed (Rancher → 8443)', cmd:`kubectl port-forward -n cattle-system svc/rancher 8443:443` },
