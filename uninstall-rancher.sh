@@ -15,8 +15,9 @@ helm uninstall rancher --namespace cattle-system 2>/dev/null || echo "Rancher gi
 #    Fonte: https://github.com/rancher/rancher-cleanup
 echo "Avvio cleanup ufficiale Rancher..."
 kubectl create -f https://raw.githubusercontent.com/rancher/rancher-cleanup/main/deploy/rancher-cleanup.yaml
-echo "Attendo completamento job rancher-cleanup (max 5 minuti)..."
-kubectl wait job/rancher-cleanup -n kube-system --for=condition=complete --timeout=300s
+echo "Attendo completamento job cleanup-job (max 5 minuti)..."
+sleep 5
+kubectl wait job/cleanup-job -n kube-system --for=condition=complete --timeout=300s || echo "Attenzione: timeout attesa cleanup-job, proseguo."
 kubectl delete -f https://raw.githubusercontent.com/rancher/rancher-cleanup/main/deploy/rancher-cleanup.yaml --ignore-not-found
 
 # 3. Namespace cattle-system (potrebbe essere gia' rimosso dal cleanup)
