@@ -3,6 +3,10 @@ Obiettivo: deploy cert-manager + Rancher su cluster AKS gia' esistente.
 
 
 
+IMPORTANTE — attivare sempre il virtualenv prima di usare ansible-vault o ansible-playbook:
+    source ~/ansible-env/bin/activate
+    # Il prompt diventa: (ansible-env) azureuser@...
+
 Cifrare il file vault:
     ansible-vault encrypt group_vars/all/vault.yml
 
@@ -10,9 +14,12 @@ Ansible chiedera' una password VAULT
 Quella password vault serve poi a ogni run del playbook:
     ansible-playbook site.yml --ask-vault-pass
 
-
 Ansible decifra automaticamente a runtime quando passi --ask-vault-pass
 oppure ANSIBLE_VAULT_PASSWORD_FILE=~/.vault_pass
+
+Visualizzare il contenuto dei vault senza salvare in chiaro su disco:
+    ansible-vault view group_vars/all/vault.yml --ask-vault-pass
+    ansible-vault view group_vars/all/vault_cavalid.yml --ask-vault-pass
 
 
 --------------------------------------------------------------------------------
