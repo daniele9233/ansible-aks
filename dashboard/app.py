@@ -1,0 +1,125 @@
+from flask import Flask, request, jsonify, render_template
+import subprocess
+import threading
+import tempfile
+import os
+
+app = Flask(__name__)
+
+ANSIBLE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+VENV_BIN = os.path.expanduser('~/ansible-env/bin')
+
+_job_lock = threading.Lock()
+_job_state = {
+    'status': 'idle',  # idle | running | success | failed
+    'output': [],
+}
+
+COMMANDS = {
+    'vault_main':      {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault.yml'],                                          'needs_vault': True},
+    'vault_cavalid':   {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault_cavalid.yml'],                                  'needs_vault': True},
+    'dryrun_ca_valid': {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid',    '--check', '--diff'],            'needs_vault': True},
+    'dryrun_self':     {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed', '--check', '--diff'],            'needs_vault': True},
+    'deploy_ca_valid': {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid'],                                    'needs_vault': True},
+    'deploy_self':     {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed'],                                 'needs_vault': True},
+    'uninstall':       {'exe': 'bash',             'args': ['uninstall-rancher.sh'],                                                      'needs_vault': False},
+}
+
+
+def _run(cmd_info, vault_password):
+    vault_pass_file = None
+    try:
+        env = os.environ.copy()
+        env['PATH'] = os.path.expanduser(VENV_BIN) + ':' + env['PATH']
+        env['ANSIBLE_FORCE_COLOR'] = '1'
+        env['PYTHONUNBUFFERED'] = '1'
+
+        exe = cmd_info['exe']
+        if exe not in ('bash', 'sh'):
+            exe = os.path.join(os.path.expanduser(VENV_BIN), exe)
+
+        full_cmd = [exe] + cmd_info['args']
+
+        if vault_password:
+            tf = tempfile.NamedTemporaryFile(mode='w', suffix='.vaultpass', delete=False)
+            tf.write(vault_password)
+            tf.close()
+            vault_pass_file = tf.name
+            full_cmd += ['--vault-password-file', vault_pass_file]
+
+        proc = subprocess.Popen(
+            full_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            cwd=ANSIBLE_DIR,
+            bufsize=1,
+            universal_newlines=True,
+        )
+
+        for line in iter(proc.stdout.readline, ''):
+            _job_state['output'].append(line.rstrip('\n'))
+
+        proc.wait()
+        _job_state['status'] = 'success' if proc.returncode == 0 else 'failed'
+
+    except Exception as exc:
+        _job_state['output'].append(f'[ERRORE INTERNO] {exc}')
+        _job_state['status'] = 'failed'
+
+    finally:
+        if vault_pass_file:
+            try:
+                os.unlink(vault_pass_file)
+            except OSError:
+                pass
+        _job_lock.release()
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/api/output')
+def api_output():
+    since = int(request.args.get('since', 0))
+    lines = _job_state['output'][since:]
+    return jsonify({
+        'lines': lines,
+        'total': len(_job_state['output']),
+        'status': _job_state['status'],
+    })
+
+
+@app.route('/api/run', methods=['POST'])
+def api_run():
+    data = request.get_json(force=True) or {}
+    action = data.get('action', '')
+    vault_password = data.get('vault_password', '')
+
+    if action not in COMMANDS:
+        return jsonify({'error': 'Azione non valida'}), 400
+
+    cmd_info = COMMANDS[action]
+    if cmd_info['needs_vault'] and not vault_password:
+        return jsonify({'error': 'Vault password obbligatoria per questa operazione'}), 400
+
+    if not _job_lock.acquire(blocking=False):
+        return jsonify({'error': 'Un job è già in esecuzione. Attendi il completamento.'}), 409
+
+    _job_state['output'] = []
+    _job_state['status'] = 'running'
+
+    t = threading.Thread(
+        target=_run,
+        args=(cmd_info, vault_password if cmd_info['needs_vault'] else None),
+        daemon=True,
+    )
+    t.start()
+
+    return jsonify({'status': 'started'})
+
+
+if __name__ == '__main__':
+    app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)

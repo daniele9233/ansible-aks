@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="it" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AKS Rancher Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        .light-idle    { background: #475569; }
+        .light-running { background: #f59e0b; box-shadow: 0 0 14px #f59e0b88; animation: blink 1.2s ease-in-out infinite; }
+        .light-success { background: #22c55e; box-shadow: 0 0 14px #22c55e88; }
+        .light-failed  { background: #ef4444; box-shadow: 0 0 14px #ef444488; }
+
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+        #terminal { height: 420px; overflow-y: auto; scroll-behavior: smooth; }
+
+        .card-vault    { border-left: 3px solid #3b82f6; }
+        .card-dryrun   { border-left: 3px solid #eab308; }
+        .card-deploy   { border-left: 3px solid #22c55e; }
+        .card-access   { border-left: 3px solid #8b5cf6; }
+        .card-uninstall{ border-left: 3px solid #ef4444; }
+
+        .btn-copy.copied { background:#22c55e !important; }
+
+        #modal-backdrop { backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-full p-6">
+<div class="max-w-5xl mx-auto">
+
+    <!-- ── HEADER ── -->
+    <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center gap-3">
+            <span class="text-4xl">🚀</span>
+            <div>
+                <h1 class="text-2xl font-bold text-white">AKS Rancher Dashboard</h1>
+                <p class="text-slate-500 text-sm">ansible-aks / daniele9233</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 bg-slate-800 px-5 py-2.5 rounded-full border border-slate-700">
+            <div id="light" class="w-4 h-4 rounded-full light-idle transition-all duration-500"></div>
+            <span id="status-text" class="text-sm font-medium text-slate-300">Inattivo</span>
+        </div>
+    </div>
+
+    <!-- ── VAULT ── -->
+    <div class="bg-slate-800 rounded-2xl p-6 mb-4 card-vault">
+        <h2 class="text-lg font-semibold text-blue-400 mb-1 flex items-center gap-2">🔐 Vault</h2>
+        <p class="text-slate-500 text-xs mb-4">Visualizza il contenuto cifrato senza salvare su disco</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-xs text-slate-400 mb-2 mono">group_vars/all/vault.yml</p>
+                <input type="password" id="pw-vault-main" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('vault_main','pw-vault-main')"
+                    class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    🔍 Visualizza vault.yml
+                </button>
+            </div>
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-xs text-slate-400 mb-2 mono">group_vars/all/vault_cavalid.yml</p>
+                <input type="password" id="pw-vault-cavalid" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('vault_cavalid','pw-vault-cavalid')"
+                    class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    🔍 Visualizza vault_cavalid.yml
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── DRY-RUN ── -->
+    <div class="bg-slate-800 rounded-2xl p-6 mb-4 card-dryrun">
+        <h2 class="text-lg font-semibold text-yellow-400 mb-1 flex items-center gap-2">🧪 Dry-Run</h2>
+        <p class="text-slate-500 text-xs mb-4">Simulazione — nessuna modifica al cluster <span class="mono">--check --diff</span></p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-sm text-yellow-300 font-semibold mb-0.5">rancher_ca_valid</p>
+                <p class="text-xs text-slate-500 mb-3">Traefik + certificato wildcard AlmavivA</p>
+                <input type="password" id="pw-dryrun-ca" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-yellow-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('dryrun_ca_valid','pw-dryrun-ca')"
+                    class="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    ▶ Simula CA Valid
+                </button>
+            </div>
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-sm text-yellow-300 font-semibold mb-0.5">rancher_self_signed</p>
+                <p class="text-xs text-slate-500 mb-3">cert-manager + certificato self-signed</p>
+                <input type="password" id="pw-dryrun-self" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-yellow-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('dryrun_self','pw-dryrun-self')"
+                    class="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    ▶ Simula Self-Signed
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── DEPLOY ── -->
+    <div class="bg-slate-800 rounded-2xl p-6 mb-4 card-deploy">
+        <h2 class="text-lg font-semibold text-green-400 mb-1 flex items-center gap-2">🚀 Deploy</h2>
+        <div class="flex items-start gap-2 mb-4 bg-orange-950 border border-orange-800 rounded-xl px-4 py-3">
+            <span class="text-orange-400 text-base mt-0.5">⚠️</span>
+            <p class="text-orange-300 text-xs">Queste operazioni modificano il cluster Kubernetes. Esegui sempre il Dry-Run prima.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-sm text-green-300 font-semibold mb-0.5">rancher_ca_valid</p>
+                <p class="text-xs text-slate-500 mb-3">Traefik + certificato wildcard AlmavivA</p>
+                <input type="password" id="pw-deploy-ca" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-green-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('deploy_ca_valid','pw-deploy-ca')"
+                    class="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    🚀 Deploy CA Valid
+                </button>
+            </div>
+            <div class="bg-slate-900 rounded-xl p-4">
+                <p class="text-sm text-green-300 font-semibold mb-0.5">rancher_self_signed</p>
+                <p class="text-xs text-slate-500 mb-3">cert-manager + certificato self-signed</p>
+                <input type="password" id="pw-deploy-self" placeholder="Vault password..."
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-green-500 text-slate-200 placeholder-slate-600">
+                <button onclick="runAction('deploy_self','pw-deploy-self')"
+                    class="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors">
+                    🚀 Deploy Self-Signed
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── ACCESSO WINDOWS ── -->
+    <div class="bg-slate-800 rounded-2xl p-6 mb-4 card-access">
+        <h2 class="text-lg font-semibold text-purple-400 mb-4 flex items-center gap-2">🖥️ Accesso da Windows</h2>
+
+        <div class="flex gap-2 mb-5">
+            <button id="btn-mode-a" onclick="setMode('a')"
+                class="px-4 py-2 rounded-lg text-sm font-medium bg-purple-700 text-white transition-colors">
+                Modalità A — Self-Signed
+            </button>
+            <button id="btn-mode-b" onclick="setMode('b')"
+                class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors">
+                Modalità B — CA Valid (AlmavivA)
+            </button>
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-xs text-slate-400 mb-1.5">Percorso file .pem (Windows):</label>
+            <input type="text" id="pem-path"
+                value="C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem"
+                oninput="updateAccessCommands()"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm mono focus:outline-none focus:border-purple-500 text-slate-200">
+        </div>
+
+        <div id="note-mode-b" class="hidden mb-5 bg-purple-950 border border-purple-800 rounded-xl px-4 py-3">
+            <p class="text-purple-300 text-xs font-semibold mb-1">📋 Aggiungere al file hosts di Windows (come Amministratore):</p>
+            <p class="text-slate-500 text-xs mono mb-1">C:\Windows\System32\drivers\etc\hosts</p>
+            <div class="flex items-center gap-2">
+                <code id="hosts-line" class="flex-1 text-purple-100 text-xs mono bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">127.0.0.1   rancher.app.iac-svil.almaviva.it</code>
+                <button onclick="copyEl('hosts-line',this)" class="btn-copy shrink-0 text-xs bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded-lg transition-colors">📋</button>
+            </div>
+        </div>
+
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">① SSH Tunnel — aprire su PowerShell/CMD e lasciare aperto:</label>
+                <div class="flex gap-2">
+                    <code id="cmd-ssh" class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs mono text-slate-300 truncate"></code>
+                    <button onclick="copyEl('cmd-ssh',this)" class="btn-copy shrink-0 bg-purple-700 hover:bg-purple-600 px-3 py-2 rounded-lg text-xs transition-colors">📋</button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">② Port-Forward — eseguire nella sessione SSH sulla VM:</label>
+                <div class="flex gap-2">
+                    <code id="cmd-pf" class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs mono text-slate-300"></code>
+                    <button onclick="copyEl('cmd-pf',this)" class="btn-copy shrink-0 bg-purple-700 hover:bg-purple-600 px-3 py-2 rounded-lg text-xs transition-colors">📋</button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">③ URL Browser:</label>
+                <div class="flex gap-2">
+                    <code id="cmd-url" class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs mono text-green-400"></code>
+                    <button onclick="copyEl('cmd-url',this)" class="btn-copy shrink-0 bg-purple-700 hover:bg-purple-600 px-3 py-2 rounded-lg text-xs transition-colors">📋</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── UNINSTALL ── -->
+    <div class="bg-slate-800 rounded-2xl p-6 mb-4 card-uninstall">
+        <h2 class="text-lg font-semibold text-red-400 mb-1 flex items-center gap-2">🗑️ Uninstall</h2>
+        <p class="text-slate-500 text-xs mb-4">Rimuove Rancher, Traefik, cert-manager, tutti i CRD cattle/fleet/rancher e i repository Helm. Non tocca il cluster AKS.</p>
+        <button onclick="openUninstallModal()"
+            class="bg-red-700 hover:bg-red-600 active:bg-red-800 text-white font-semibold py-2.5 px-6 rounded-xl text-sm transition-colors flex items-center gap-2">
+            🗑️ Esegui Uninstall
+        </button>
+    </div>
+
+    <!-- ── TERMINAL ── -->
+    <div class="bg-slate-800 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-semibold text-slate-300 flex items-center gap-2">💻 Log Output</h2>
+            <button onclick="clearLog()" class="text-xs text-slate-600 hover:text-slate-400 transition-colors px-3 py-1 rounded-lg hover:bg-slate-700">🧹 Pulisci</button>
+        </div>
+        <div id="terminal" class="bg-slate-950 rounded-xl p-4 mono text-xs text-slate-400 leading-relaxed border border-slate-700">
+            <span class="text-slate-600">Dashboard pronta. Seleziona un'operazione per iniziare.</span>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── UNINSTALL MODAL ── -->
+<div id="modal-backdrop" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-red-700 shadow-2xl">
+        <h3 class="text-xl font-bold text-red-400 mb-2">⚠️ Conferma Uninstall</h3>
+        <p class="text-slate-400 text-sm mb-2">Questa operazione rimuoverà <strong class="text-white">completamente</strong> Rancher e tutti i componenti associati dal cluster.</p>
+        <p class="text-slate-400 text-sm mb-4">Scrivi <strong class="text-red-400 font-mono tracking-widest">UNINSTALL</strong> per confermare:</p>
+        <input type="text" id="uninstall-confirm" placeholder="UNINSTALL" autocomplete="off"
+            class="w-full bg-slate-900 border border-red-700 rounded-xl px-4 py-2.5 text-sm mb-5 focus:outline-none text-slate-200 placeholder-slate-600 mono">
+        <div class="flex gap-3">
+            <button onclick="closeModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 py-2.5 px-4 rounded-xl text-sm transition-colors font-medium">
+                Annulla
+            </button>
+            <button onclick="confirmUninstall()" class="flex-1 bg-red-700 hover:bg-red-600 active:bg-red-800 text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-colors">
+                🗑️ Conferma
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────
+let currentMode = 'a';
+let logOffset   = 0;
+
+// ── Boot ───────────────────────────────────────────────────────────
+updateAccessCommands();
+setInterval(pollOutput, 700);
+
+// ── Traffic light ──────────────────────────────────────────────────
+const STATUS = {
+    idle:    { cls: 'light-idle',    text: 'Inattivo',         color: 'text-slate-300' },
+    running: { cls: 'light-running', text: 'In esecuzione...', color: 'text-yellow-300' },
+    success: { cls: 'light-success', text: 'Completato ✓',     color: 'text-green-300'  },
+    failed:  { cls: 'light-failed',  text: 'Errore ✗',         color: 'text-red-300'    },
+};
+
+function setLight(s) {
+    const cfg = STATUS[s] || STATUS.idle;
+    const l = document.getElementById('light');
+    const t = document.getElementById('status-text');
+    l.className = `w-4 h-4 rounded-full transition-all duration-500 ${cfg.cls}`;
+    t.textContent = cfg.text;
+    t.className   = `text-sm font-medium ${cfg.color}`;
+}
+
+// ── Output polling ─────────────────────────────────────────────────
+function pollOutput() {
+    fetch(`/api/output?since=${logOffset}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.lines && d.lines.length > 0) {
+                appendLines(d.lines);
+                logOffset = d.total;
+            }
+            setLight(d.status);
+        })
+        .catch(() => {});
+}
+
+// ── ANSI → HTML ────────────────────────────────────────────────────
+const ANSI = {
+    '0':'r','0;0':'r','00':'r',
+    '1':'<b>','01':'<b>',
+    '0;30':'#64748b','30':'#64748b',
+    '0;31':'#f87171','31':'#f87171','1;31':'#fca5a5',
+    '0;32':'#4ade80','32':'#4ade80','1;32':'#86efac',
+    '0;33':'#fbbf24','33':'#fbbf24','1;33':'#fde68a',
+    '0;34':'#60a5fa','34':'#60a5fa','1;34':'#93c5fd',
+    '0;35':'#c084fc','35':'#c084fc','1;35':'#d8b4fe',
+    '0;36':'#22d3ee','36':'#22d3ee','1;36':'#67e8f9',
+    '0;37':'#e2e8f0','37':'#e2e8f0','1;37':'#ffffff',
+};
+
+function ansiToHtml(raw) {
+    let s = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    let depth = 0;
+    s = s.replace(/\x1b\[([0-9;]*)m/g, (_, code) => {
+        const v = ANSI[code];
+        if (!v) return '';
+        if (v === 'r') { const c = depth; depth = 0; return '</b>'.repeat(0) + '</span>'.repeat(c); }
+        if (v === '<b>') { depth++; return '<b>'; }
+        depth++;
+        return `<span style="color:${v}">`;
+    });
+    return s + '</span>'.repeat(depth);
+}
+
+function appendLines(lines) {
+    const term = document.getElementById('terminal');
+    if (logOffset === 0) term.innerHTML = '';
+    lines.forEach(line => {
+        const d = document.createElement('div');
+        d.innerHTML = ansiToHtml(line) || '&nbsp;';
+        term.appendChild(d);
+    });
+    term.scrollTop = term.scrollHeight;
+}
+
+function clearLog() {
+    document.getElementById('terminal').innerHTML = '<span class="text-slate-600">Log pulito.</span>';
+    logOffset = 0;
+}
+
+// ── Run action ─────────────────────────────────────────────────────
+function runAction(action, pwId) {
+    const pw = pwId ? document.getElementById(pwId).value : '';
+
+    fetch('/api/run', {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body:    JSON.stringify({action, vault_password: pw}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert('⚠️  ' + d.error); return; }
+        document.getElementById('terminal').innerHTML = '';
+        logOffset = 0;
+        setLight('running');
+    })
+    .catch(e => alert('Errore di comunicazione: ' + e));
+}
+
+// ── Access section ─────────────────────────────────────────────────
+function setMode(mode) {
+    currentMode = mode;
+    const on  = 'px-4 py-2 rounded-lg text-sm font-medium bg-purple-700 text-white transition-colors';
+    const off = 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors';
+    document.getElementById('btn-mode-a').className = mode === 'a' ? on : off;
+    document.getElementById('btn-mode-b').className = mode === 'b' ? on : off;
+    document.getElementById('note-mode-b').classList.toggle('hidden', mode !== 'b');
+    updateAccessCommands();
+}
+
+function updateAccessCommands() {
+    const pem = document.getElementById('pem-path').value || 'C:\\path\\to\\key.pem';
+    document.getElementById('cmd-ssh').textContent = `ssh -i "${pem}" -L 8443:localhost:8443 azureuser@10.207.201.136`;
+
+    if (currentMode === 'a') {
+        document.getElementById('cmd-pf').textContent  = 'kubectl port-forward -n cattle-system svc/rancher 8443:443';
+        document.getElementById('cmd-url').textContent = 'https://localhost:8443/login';
+    } else {
+        document.getElementById('cmd-pf').textContent  = 'kubectl port-forward -n traefik svc/traefik 8443:443';
+        document.getElementById('cmd-url').textContent = 'https://rancher.app.iac-svil.almaviva.it:8443';
+    }
+}
+
+function copyEl(id, btn) {
+    navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    });
+}
+
+// ── Uninstall modal ────────────────────────────────────────────────
+function openUninstallModal() {
+    document.getElementById('uninstall-confirm').value = '';
+    document.getElementById('modal-backdrop').classList.remove('hidden');
+    setTimeout(() => document.getElementById('uninstall-confirm').focus(), 50);
+}
+
+function closeModal() {
+    document.getElementById('modal-backdrop').classList.add('hidden');
+}
+
+function confirmUninstall() {
+    if (document.getElementById('uninstall-confirm').value !== 'UNINSTALL') {
+        alert('Scrivi esattamente UNINSTALL per confermare');
+        return;
+    }
+    closeModal();
+    runAction('uninstall', null);
+}
+
+document.getElementById('modal-backdrop').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-backdrop')) closeModal();
+});
+
+document.getElementById('uninstall-confirm').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmUninstall();
+});
+</script>
+</body>
+</html>
