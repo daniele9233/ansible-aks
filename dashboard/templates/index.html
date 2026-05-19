@@ -222,6 +222,28 @@
     border-radius:6px; color:#8b96a3; transition: all 150ms ease-out; position:relative;
   }
   .icon-btn:hover { color:#fafafa; background:#161d27; }
+
+  /* resizable terminal panel handle */
+  .resize-handle {
+    width:5px; flex-shrink:0; cursor:col-resize; position:relative;
+    background:#0a0e14; border-left:1px solid #1f2733;
+    transition: background 150ms ease-out;
+  }
+  .resize-handle::after {
+    content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:3px; height:48px; border-radius:3px;
+    background:transparent; transition: background 150ms ease-out;
+  }
+  .resize-handle:hover::after, .resize-handle.dragging::after { background:#e8a838; }
+  .resize-handle.dragging { background:#0a0e14; }
+  body.resizing { cursor:col-resize !important; user-select:none !important; }
+
+  /* file viewer tab active */
+  .btn.fv-on { background:#1c2532; color:#fafafa; border-color:#3f4854; }
+
+  /* file viewer syntax highlight */
+  .hl-key{color:#5aa6ed} .hl-str{color:#3fb87a} .hl-cmt{color:#5d6773; font-style:italic}
+  .hl-kw{color:#22d3ee} .hl-num{color:#e8a838} .hl-enc{color:#e25555; opacity:.7}
 </style>
 </head>
 <body class="antialiased">
@@ -530,9 +552,10 @@
                 <button class="btn btn-primary w-full justify-center" data-action="vault_cavalid" data-vault><i data-lucide="eye" class="w-4 h-4"></i>View vault_cavalid.yml</button>
               </div>
             </div>
+            <button class="btn btn-ghost btn-sm mt-5" data-open-files="vault"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View source files</button>
           </div>
-          <!-- terminal sidepanel -->
-          <div class="w-[480px] shrink-0 border-l border-rule bg-ink-900 sticky top-16 self-start" style="height: calc(100vh - 64px);">
+          <div class="resize-handle" title="Trascina per ridimensionare"></div>
+          <div data-term-slot class="shrink-0 bg-ink-900 sticky top-16 self-start" style="width:480px; height: calc(100vh - 64px);">
             <!-- terminal panel injected by JS -->
           </div>
         </div>
@@ -579,8 +602,10 @@
                 </div>
               </div>
             </div>
+            <button class="btn btn-ghost btn-sm mt-5" data-open-files="dryrun"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View playbook files</button>
           </div>
-          <div class="w-[480px] shrink-0 border-l border-rule bg-ink-900 sticky top-16 self-start" style="height: calc(100vh - 64px);"></div>
+          <div class="resize-handle" title="Trascina per ridimensionare"></div>
+          <div data-term-slot class="shrink-0 bg-ink-900 sticky top-16 self-start" style="width:480px; height: calc(100vh - 64px);"></div>
         </div>
       </section>
 
@@ -615,8 +640,10 @@
                 <button class="btn btn-primary w-full justify-center" data-action="deploy_self" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Self-Signed</button>
               </div>
             </div>
+            <button class="btn btn-ghost btn-sm mt-5" data-open-files="deploy"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View playbook files</button>
           </div>
-          <div class="w-[480px] shrink-0 border-l border-rule bg-ink-900 sticky top-16 self-start" style="height: calc(100vh - 64px);"></div>
+          <div class="resize-handle" title="Trascina per ridimensionare"></div>
+          <div data-term-slot class="shrink-0 bg-ink-900 sticky top-16 self-start" style="width:480px; height: calc(100vh - 64px);"></div>
         </div>
       </section>
 
@@ -632,7 +659,7 @@
                   <i data-lucide="alert-triangle" class="w-5 h-5 text-bad"></i>
                 </div>
                 <div class="min-w-0">
-                  <div class="font-medium">This will run <span class="font-mono text-fg">bash uninstall-rancher.sh</span></div>
+                  <div class="font-medium">This will run <span class="font-mono text-fg">bash uninstall-rancher.sh</span> <button class="text-brand hover:text-brand-hi text-[12px] ml-1 inline-flex items-center gap-1" data-open-files="uninstall"><i data-lucide="file-code-2" class="w-3 h-3"></i>view script</button></div>
                   <p class="text-[12.5px] text-fg-mute mt-1">All Rancher resources, namespaces and CRDs will be removed. Workloads outside the Rancher namespace are not touched. No vault password required.</p>
                   <div class="mt-5 flex gap-2">
                     <button class="btn btn-danger" id="btn-open-uninstall"><i data-lucide="trash-2" class="w-4 h-4"></i>Run uninstall</button>
@@ -642,7 +669,8 @@
               </div>
             </div>
           </div>
-          <div class="w-[480px] shrink-0 border-l border-rule bg-ink-900 sticky top-16 self-start" style="height: calc(100vh - 64px);"></div>
+          <div class="resize-handle" title="Trascina per ridimensionare"></div>
+          <div data-term-slot class="shrink-0 bg-ink-900 sticky top-16 self-start" style="width:480px; height: calc(100vh - 64px);"></div>
         </div>
       </section>
 
@@ -751,6 +779,31 @@
 
     </div>
   </main>
+</div>
+
+<!-- ============== FILE VIEWER MODAL ============== -->
+<div id="file-viewer-modal" class="fixed inset-0 z-50 hidden items-center justify-center" style="background:rgba(7,10,15,.88); backdrop-filter:blur(6px)">
+  <div class="card flex flex-col" style="width:min(960px,95vw); max-height:85vh; min-height:400px;">
+    <!-- header -->
+    <div class="px-5 py-3 border-b border-rule flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2.5">
+        <i data-lucide="file-code-2" class="w-4 h-4 text-brand"></i>
+        <span class="font-medium text-[14px]" id="fv-title">Source files</span>
+        <span class="text-fg-dim text-[12px]" id="fv-subtitle"></span>
+      </div>
+      <button class="icon-btn" id="fv-close" title="Chiudi"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <!-- file tabs -->
+    <div class="px-4 py-2 border-b border-rule flex gap-1.5 flex-wrap shrink-0 bg-ink-900" id="fv-tabs"></div>
+    <!-- content -->
+    <div class="flex-1 overflow-auto min-h-0">
+      <div class="px-4 py-2 border-b border-rule flex items-center justify-between bg-ink-900 shrink-0">
+        <span class="text-[11px] font-mono text-fg-mute" id="fv-filepath"></span>
+        <button class="btn btn-ghost btn-sm" id="fv-copy"><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy</button>
+      </div>
+      <pre id="fv-content" class="text-[12.5px] leading-relaxed p-5 m-0 font-mono overflow-auto whitespace-pre" style="color:#cdd6df; min-height:200px;"><span class="hl-cmt">Seleziona un file dalla lista sopra</span></pre>
+    </div>
+  </div>
 </div>
 
 <!-- ============== UNINSTALL CONFIRM MODAL ============== -->
@@ -928,7 +981,7 @@ function wrapText(text, classes) {
 function mountSideTerminals(screenKey) {
   const screen = $(`section[data-screen="${screenKey}"]`);
   if (!screen) return;
-  const slot = screen.querySelector('.w-\\[480px\\]');
+  const slot = screen.querySelector('[data-term-slot]');
   if (!slot) return;
   if (slot.dataset.mounted) return;
   slot.dataset.mounted = '1';
@@ -1455,6 +1508,149 @@ $('#btn-refresh')?.addEventListener('click', () => {
 });
 $('#hamburger')?.addEventListener('click', () => {
   $('#sidebar').classList.toggle('hidden');
+});
+
+/* ============================================================
+   SYNTAX HIGHLIGHT (YAML / Bash)
+   ============================================================ */
+function syntaxHighlight(code, ext) {
+  const isYaml = ext === 'yml' || ext === 'yaml';
+  const isBash = ext === 'sh' || ext === 'bash';
+  return code.split('\n').map(line => {
+    const e = escapeHTML(line);
+    if (isYaml) return hlYaml(e);
+    if (isBash) return hlBash(e);
+    return e;
+  }).join('\n');
+}
+function hlYaml(e) {
+  if (/^\s*#/.test(e)) return `<span class="hl-cmt">${e}</span>`;
+  if (/\$ANSIBLE_VAULT/.test(e)) return `<span class="hl-enc">${e}</span>`;
+  return e
+    .replace(/^(\s*-?\s*)([\w][\w.\-\/]*)(\s*:)/, (_,sp,k,c) =>
+      `${sp}<span class="hl-key">${k}</span><span style="opacity:.5">${c}</span>`)
+    .replace(/(["'])([^'"]*)\1/g, m => `<span class="hl-str">${m}</span>`)
+    .replace(/\b(true|false|yes|no|null|never|always)\b/g, m => `<span class="hl-num">${m}</span>`);
+}
+function hlBash(e) {
+  if (/^\s*#/.test(e)) return `<span class="hl-cmt">${e}</span>`;
+  return e
+    .replace(/^(\s*)(echo|helm|kubectl|set|if|fi|else|then|for|do|done|bash|source|exit)\b/,
+      (_,sp,kw) => `${sp}<span class="hl-kw">${kw}</span>`)
+    .replace(/(["'])([^'"]*)\1/g, m => `<span class="hl-str">${m}</span>`);
+}
+
+/* ============================================================
+   FILE VIEWER
+   ============================================================ */
+const SCREEN_SOURCE_FILES = {
+  vault: [
+    { path:'group_vars/all/main.yml',         label:'main.yml' },
+    { path:'group_vars/all/vault.yml',         label:'vault.yml' },
+    { path:'group_vars/all/vault_cavalid.yml', label:'vault_cavalid.yml' },
+  ],
+  dryrun: [
+    { path:'site.yml',                                                              label:'site.yml' },
+    { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
+    { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
+    { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
+  ],
+  deploy: [
+    { path:'site.yml',                                                              label:'site.yml' },
+    { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
+    { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
+    { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
+  ],
+  uninstall: [
+    { path:'uninstall-rancher.sh', label:'uninstall-rancher.sh' },
+  ],
+};
+const fvCache = {};
+let fvCurrentPath = null;
+
+async function loadFileContent(path) {
+  if (fvCache[path] !== undefined) return fvCache[path];
+  try {
+    const r = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+    const j = await r.json();
+    fvCache[path] = j.error ? `# Errore: ${j.error}` : j.content;
+  } catch(e) {
+    fvCache[path] = `# Backend non raggiungibile: ${e.message}`;
+  }
+  return fvCache[path];
+}
+
+async function openFileViewer(screenKey) {
+  const files = SCREEN_SOURCE_FILES[screenKey] || [];
+  if (!files.length) return;
+  const modal = $('#file-viewer-modal');
+  const titles = { vault:'Vault', dryrun:'Dry-Run', deploy:'Deploy', uninstall:'Uninstall' };
+  $('#fv-title').textContent = `Source · ${titles[screenKey] || screenKey}`;
+  $('#fv-subtitle').textContent = `${files.length} file${files.length > 1 ? 's' : ''}`;
+  $('#fv-tabs').innerHTML = files.map((f,i) =>
+    `<button class="btn btn-ghost btn-sm${i===0?' fv-on':''}" data-fv-file="${f.path}">${f.label}</button>`
+  ).join('');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  lucide.createIcons({ icons:lucide.icons, attrs:{} });
+  await selectFvFile(files[0].path);
+}
+
+async function selectFvFile(path) {
+  fvCurrentPath = path;
+  const content = $('#fv-content');
+  content.innerHTML = '<span class="hl-cmt">Caricamento…</span>';
+  $$('[data-fv-file]').forEach(b => b.classList.toggle('fv-on', b.dataset.fvFile === path));
+  const text = await loadFileContent(path);
+  const ext = path.split('.').pop();
+  content.innerHTML = syntaxHighlight(text, ext);
+  $('#fv-filepath').textContent = path;
+}
+
+document.addEventListener('click', async (e) => {
+  // file viewer tab
+  const tab = e.target.closest('[data-fv-file]');
+  if (tab) { await selectFvFile(tab.dataset.fvFile); return; }
+  // open file viewer
+  const openBtn = e.target.closest('[data-open-files]');
+  if (openBtn) { await openFileViewer(openBtn.dataset.openFiles); return; }
+});
+$('#fv-close')?.addEventListener('click', () => {
+  $('#file-viewer-modal').classList.replace('flex','hidden');
+});
+$('#file-viewer-modal')?.addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.replace('flex','hidden');
+});
+$('#fv-copy')?.addEventListener('click', async () => {
+  if (!fvCurrentPath) return;
+  const text = await loadFileContent(fvCurrentPath);
+  navigator.clipboard.writeText(text).then(() => flashCopy($('#fv-copy')));
+});
+
+/* ============================================================
+   TERMINAL RESIZE
+   ============================================================ */
+let _resize = null;
+document.addEventListener('mousedown', e => {
+  const h = e.target.closest('.resize-handle');
+  if (!h) return;
+  e.preventDefault();
+  const panel = h.nextElementSibling;
+  _resize = { h, panel, x0: e.clientX, w0: panel.offsetWidth };
+  h.classList.add('dragging');
+  document.body.classList.add('resizing');
+});
+document.addEventListener('mousemove', e => {
+  if (!_resize) return;
+  const delta = _resize.x0 - e.clientX;            // drag left → wider
+  const newW = Math.min(900, Math.max(280, _resize.w0 + delta));
+  _resize.panel.style.width = newW + 'px';
+});
+document.addEventListener('mouseup', () => {
+  if (!_resize) return;
+  _resize.h.classList.remove('dragging');
+  document.body.classList.remove('resizing');
+  _resize = null;
 });
 
 /* ============================================================

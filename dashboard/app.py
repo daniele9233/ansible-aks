@@ -76,6 +76,22 @@ def _run(cmd_info, vault_password):
         _job_lock.release()
 
 
+@app.route('/api/file')
+def api_file():
+    rel = request.args.get('path', '')
+    full = os.path.normpath(os.path.join(ANSIBLE_DIR, rel))
+    ansible_root = os.path.normpath(ANSIBLE_DIR)
+    if full != ansible_root and not full.startswith(ansible_root + os.sep):
+        return jsonify({'error': 'Path non consentito'}), 403
+    try:
+        with open(full, 'r', encoding='utf-8') as f:
+            return jsonify({'content': f.read(), 'path': rel})
+    except FileNotFoundError:
+        return jsonify({'error': 'File non trovato'}), 404
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
