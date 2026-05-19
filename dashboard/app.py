@@ -2,12 +2,13 @@ from flask import Flask, request, jsonify, render_template
 import subprocess
 import threading
 import tempfile
+import shlex
 import os
 
 app = Flask(__name__)
 
 ANSIBLE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-VENV_BIN = os.path.expanduser('~/ansible-env/bin')
+VENV = os.path.expanduser('~/ansible-env')
 
 _job_lock = threading.Lock()
 _job_state = {
@@ -30,25 +31,30 @@ def _run(cmd_info, vault_password):
     vault_pass_file = None
     try:
         env = os.environ.copy()
-        env['PATH'] = os.path.expanduser(VENV_BIN) + ':' + env['PATH']
+        env['VIRTUAL_ENV'] = VENV
+        env['PATH'] = f'{VENV}/bin:' + env.get('PATH', '')
+        env.pop('PYTHONHOME', None)
         env['ANSIBLE_FORCE_COLOR'] = '1'
         env['PYTHONUNBUFFERED'] = '1'
 
-        exe = cmd_info['exe']
-        if exe not in ('bash', 'sh'):
-            exe = os.path.join(os.path.expanduser(VENV_BIN), exe)
-
-        full_cmd = [exe] + cmd_info['args']
+        cmd_parts = [cmd_info['exe']] + list(cmd_info['args'])
 
         if vault_password:
             tf = tempfile.NamedTemporaryFile(mode='w', suffix='.vaultpass', delete=False)
             tf.write(vault_password)
             tf.close()
             vault_pass_file = tf.name
-            full_cmd += ['--vault-password-file', vault_pass_file]
+            cmd_parts += ['--vault-password-file', vault_pass_file]
+
+        quoted = ' '.join(shlex.quote(p) for p in cmd_parts)
+        shell_cmd = (
+            f'source {VENV}/bin/activate'
+            f' && printf "\\033[2m[venv] activated: %s\\n[venv] python:    %s\\033[0m\\n" "$VIRTUAL_ENV" "$(which python)"'
+            f' && exec {quoted}'
+        )
 
         proc = subprocess.Popen(
-            full_cmd,
+            ['bash', '-c', shell_cmd],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=env,

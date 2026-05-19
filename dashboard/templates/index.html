@@ -741,40 +741,17 @@
       <!-- ============================================================== -->
       <!-- HOW-TO                                                           -->
       <!-- ============================================================== -->
-      <section data-screen-label="09 How-To" data-screen="howto" class="p-8 max-w-[920px] hidden rise">
-        <h1 class="text-[26px] font-semibold leading-tight">HOW-TO</h1>
-        <p class="text-fg-mute mt-1 mb-6 text-[14px]">Recommended sequence for deploying or upgrading Rancher on AKS.</p>
-
-        <ol class="space-y-3">
-          <li class="card p-5 flex gap-4">
-            <div class="w-7 h-7 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold shrink-0">1</div>
-            <div>
-              <div class="font-medium">Decrypt and review the vault</div>
-              <p class="text-[13px] text-fg-mute mt-1">Use the <a href="#/vault" class="text-brand">Vault</a> screen to inspect <span class="font-mono text-fg">vault.yml</span> and <span class="font-mono text-fg">vault_cavalid.yml</span>. Confirm the cert chain matches your domain.</p>
-            </div>
-          </li>
-          <li class="card p-5 flex gap-4">
-            <div class="w-7 h-7 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold shrink-0">2</div>
-            <div>
-              <div class="font-medium">Run a dry-run for your mode</div>
-              <p class="text-[13px] text-fg-mute mt-1">From <a href="#/dryrun" class="text-brand">Dry-Run</a> pick CA-Valid or Self-Signed. Read the diff carefully — the green/red blocks in the terminal indicate what would change.</p>
-            </div>
-          </li>
-          <li class="card p-5 flex gap-4">
-            <div class="w-7 h-7 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold shrink-0">3</div>
-            <div>
-              <div class="font-medium">Deploy</div>
-              <p class="text-[13px] text-fg-mute mt-1">Once the dry-run is clean, head to <a href="#/deploy" class="text-brand">Deploy</a> and apply. The terminal panel streams live output.</p>
-            </div>
-          </li>
-          <li class="card p-5 flex gap-4">
-            <div class="w-7 h-7 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold shrink-0">4</div>
-            <div>
-              <div class="font-medium">Access the UI from Windows</div>
-              <p class="text-[13px] text-fg-mute mt-1">Use the <a href="#/tunnel" class="text-brand">Windows Tunnel</a> screen for the ready-to-copy SSH + kubectl commands.</p>
-            </div>
-          </li>
-        </ol>
+      <section data-screen-label="09 How-To" data-screen="howto" class="p-8 max-w-[960px] hidden rise">
+        <div class="flex items-start justify-between mb-6 gap-4">
+          <div>
+            <h1 class="text-[26px] font-semibold leading-tight">HOW-TO</h1>
+            <p class="text-fg-mute mt-1 text-[14px]">Procedure operative complete: deploy Rancher, accesso da Windows, troubleshooting. Sorgente: <span class="font-mono text-fg">HOW-TO</span> nella root del repo.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm shrink-0" data-open-files="howto"><i data-lucide="file-text" class="w-3.5 h-3.5"></i>View raw</button>
+        </div>
+        <div class="card p-7" id="howto-body">
+          <div class="text-fg-mute text-[13px]">Caricamento HOW-TO…</div>
+        </div>
       </section>
 
     </div>
@@ -936,6 +913,7 @@ function route() {
   if (['vault','dryrun','deploy','uninstall'].includes(key)) mountSideTerminals(key);
   if (key === 'dashboard') renderJobs();
   if (key === 'activity')  renderActivityScreen();
+  if (key === 'howto')     renderHowTo();
 
   window.scrollTo({ top: 0 });
 }
@@ -1564,6 +1542,9 @@ const SCREEN_SOURCE_FILES = {
   uninstall: [
     { path:'uninstall-rancher.sh', label:'uninstall-rancher.sh' },
   ],
+  howto: [
+    { path:'HOW-TO', label:'HOW-TO' },
+  ],
 };
 const fvCache = {};
 let fvCurrentPath = null;
@@ -1626,6 +1607,123 @@ $('#fv-copy')?.addEventListener('click', async () => {
   const text = await loadFileContent(fvCurrentPath);
   navigator.clipboard.writeText(text).then(() => flashCopy($('#fv-copy')));
 });
+
+/* ============================================================
+   HOW-TO RENDERER
+   ============================================================ */
+async function renderHowTo() {
+  const target = $('#howto-body');
+  if (!target) return;
+  if (target.dataset.loaded) return;
+  target.innerHTML = '<div class="text-fg-mute text-[13px]">Caricamento HOW-TO…</div>';
+  const text = await loadFileContent('HOW-TO');
+  target.innerHTML = parseHowTo(text);
+  target.dataset.loaded = '1';
+  lucide.createIcons({ icons:lucide.icons, attrs:{} });
+}
+
+function parseHowTo(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  let para = [], code = [];
+  const esc = escapeHTML;
+
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p class="text-[13.5px] text-fg leading-[1.7] my-3">${para.join(' ')}</p>`);
+    para = [];
+  };
+  const flushCode = () => {
+    if (!code.length) return;
+    const joined = code.join('\n');
+    out.push(`<div class="my-3 relative group"><pre class="font-mono text-[12.5px] leading-[1.65] px-4 py-3 rounded-md overflow-x-auto whitespace-pre" style="background:#070a0f; border:1px solid #1f2733; color:#cdd6df">${joined}</pre><button class="icon-btn !w-7 !h-7 absolute top-2 right-2 opacity-0 group-hover:opacity-100" data-copy="${esc(code.join('\n')).replace(/"/g,'&quot;')}" title="Copia"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>`);
+    code = [];
+  };
+  const flushAll = () => { flushPara(); flushCode(); };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // blank → flush
+    if (!trimmed) { flushAll(); i++; continue; }
+
+    // -------- separator → next non-empty line is H2 title
+    if (/^-{10,}$/.test(trimmed)) {
+      flushAll();
+      i++;
+      while (i < lines.length && !lines[i].trim()) i++;
+      if (i < lines.length) {
+        out.push(`<h2 class="text-[17px] font-semibold mt-10 mb-4 pb-2.5 border-b border-rule" style="letter-spacing:.005em">${esc(lines[i].trim())}</h2>`);
+        i++;
+        if (i < lines.length && /^-{10,}$/.test(lines[i].trim())) i++;
+      }
+      continue;
+    }
+
+    // === SECTION === or === SECTION
+    if (/^===/.test(trimmed)) {
+      flushAll();
+      const title = trimmed.replace(/^===\s*/, '').replace(/\s*===\s*$/, '');
+      out.push(`<h3 class="text-[14px] font-semibold mt-7 mb-3" style="color:#e8a838">${esc(title)}</h3>`);
+      i++;
+      continue;
+    }
+
+    // STEP N — title
+    if (/^STEP\s+\d+/i.test(trimmed)) {
+      flushAll();
+      const m = trimmed.match(/^(STEP\s+\d+)\s*[—\-:]?\s*(.*)$/i);
+      const step = m ? m[1] : trimmed;
+      const rest = m ? m[2] : '';
+      out.push(`<div class="mt-5 mb-3 flex items-baseline gap-3"><span class="badge badge-info shrink-0"><span class="dot"></span>${esc(step)}</span><span class="text-[13px] font-medium text-fg">${esc(rest)}</span></div>`);
+      i++;
+      continue;
+    }
+
+    // IMPORTANTE callout — collect until blank line
+    if (/^IMPORTANTE/i.test(trimmed)) {
+      flushAll();
+      const head = trimmed;
+      const body = [], codeIn = [];
+      i++;
+      while (i < lines.length && lines[i].trim()) {
+        const l = lines[i];
+        if (/^ {4,}\S/.test(l)) codeIn.push(esc(l.replace(/^ {4}/, '')));
+        else body.push(esc(l.trim()));
+        i++;
+      }
+      let inner = `<div class="font-semibold mb-1" style="color:#f3bb5a">${esc(head)}</div>`;
+      if (body.length) inner += `<div class="text-fg leading-relaxed">${body.join(' ')}</div>`;
+      if (codeIn.length) inner += `<pre class="font-mono text-[12px] mt-2 px-3 py-2 rounded overflow-x-auto whitespace-pre" style="background:rgba(0,0,0,.35); color:#f3bb5a">${codeIn.join('\n')}</pre>`;
+      out.push(`<div class="my-4 p-4 rounded-md flex gap-3" style="background:rgba(232,168,56,.07); border:1px solid rgba(232,168,56,.35)"><i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5" style="color:#e8a838"></i><div class="text-[13px] flex-1 min-w-0">${inner}</div></div>`);
+      continue;
+    }
+
+    // Indented (4+ spaces) → code line
+    if (/^ {4,}\S/.test(line)) {
+      flushPara();
+      code.push(esc(line.replace(/^ {4}/, '')));
+      i++;
+      continue;
+    }
+
+    // Short label line ending with ':' or '?'  → small label
+    if (trimmed.length < 70 && /[:?]$/.test(trimmed) && !/^[a-z]/.test(trimmed)) {
+      flushAll();
+      out.push(`<div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-mute mt-4 mb-1.5">${esc(trimmed.replace(/[:?]\s*$/, ''))}</div>`);
+      i++;
+      continue;
+    }
+
+    // Regular paragraph
+    para.push(esc(trimmed));
+    i++;
+  }
+  flushAll();
+  return out.join('\n');
+}
 
 /* ============================================================
    TERMINAL RESIZE
