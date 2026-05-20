@@ -32,6 +32,12 @@ RANCHER_NAMESPACES=(
   cert-manager
 )
 
+# Pattern dinamico: cattura anche i namespace creati da extension/installazioni
+# non incluse nella lista sopra (Rancher Turtles, UI plugins, CAPI, cluster-fleet-local-<hash>, ecc.)
+# Esempi catturati: cattle-turtles-system, cattle-ui-plugin-system, cattle-capi-system,
+# cattle-local-user-passwords, cluster-fleet-local-local-1a3d67d0a899.
+RANCHER_NS_PATTERN='^(cattle-|cluster-fleet-|fleet-|local$|traefik$|cert-manager$)'
+
 log "INIZIO DISINSTALLAZIONE RANCHER"
 
 # ---------------------------------------------------------------------------
@@ -104,8 +110,20 @@ fi
 
 # ---------------------------------------------------------------------------
 # 6. Namespace: delete + sblocco di quelli stuck in Terminating
+#    La lista hardcoded viene estesa dinamicamente con i ns che matchano
+#    RANCHER_NS_PATTERN (catturando cosi' extension e ns con suffisso random).
 # ---------------------------------------------------------------------------
-log "6/9 Rimozione namespace Rancher / Traefik / cert-manager"
+log "6/10 Rimozione namespace Rancher / Traefik / cert-manager"
+
+# Estendi RANCHER_NAMESPACES con i ns dinamici che matchano il pattern
+while IFS= read -r dyn_ns; do
+  [ -z "$dyn_ns" ] && continue
+  if [[ ! " ${RANCHER_NAMESPACES[*]} " =~ " ${dyn_ns} " ]]; then
+    RANCHER_NAMESPACES+=("$dyn_ns")
+    echo "  + scoperto ns dinamico: $dyn_ns"
+  fi
+done < <(kubectl get ns -o name 2>/dev/null | sed 's|namespace/||' | grep -E "$RANCHER_NS_PATTERN")
+
 for ns in "${RANCHER_NAMESPACES[@]}"; do
   if kubectl get ns "$ns" >/dev/null 2>&1; then
     echo "  - $ns: delete"
@@ -128,15 +146,44 @@ for ns in "${RANCHER_NAMESPACES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 7. Cluster-wide leftovers (ClusterRole, ClusterRoleBinding, Webhook, APIService)
+# 7. Force-delete dei pod fantasma rimasti nei ns Rancher/Fleet/Traefik
+#    Quando i namespace vengono cancellati via finalizer forzato, i pod
+#    possono restare elencati con status Terminating (orfani senza padrone).
+#    Match per pattern: indipendente dai nomi/hash, idempotente.
 # ---------------------------------------------------------------------------
-log "7/9 Pulizia cluster-wide (ClusterRole/Binding, Webhook, APIService)"
+log "7/10 Force-delete pod fantasma (pattern-based)"
+ghost_count=0
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  ns=$(echo "$line" | awk '{print $1}')
+  pod=$(echo "$line" | awk '{print $2}')
+  kubectl delete pod -n "$ns" "$pod" --force --grace-period=0 >/dev/null 2>&1 \
+    && ghost_count=$((ghost_count + 1)) || true
+done < <(kubectl get pods -A --no-headers 2>/dev/null \
+           | awk -v p="$RANCHER_NS_PATTERN" '$1 ~ p {print $1, $2}')
+
+if [ "$ghost_count" -gt 0 ]; then
+  echo "  Pod fantasma rimossi: $ghost_count"
+else
+  echo "  - nessun pod fantasma trovato"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. Cluster-wide leftovers (ClusterRole, ClusterRoleBinding, Webhook, APIService)
+# ---------------------------------------------------------------------------
+log "8/10 Pulizia cluster-wide (ClusterRole/Binding, Webhook, APIService)"
 
 LEFTOVER_REGEX='cattle|rancher|fleet|cert-manager|traefik'
 
-kubectl get clusterrolebinding -o name 2>/dev/null \
-  | grep -E "$LEFTOVER_REGEX" \
-  | xargs -r kubectl delete --ignore-not-found >/dev/null 2>&1 || true
+# ClusterRoleBindings: match per nome E per roleRef.name
+# (cattura CRB con nome random tipo "request-<hash>-content" che punta a "fleet-content")
+for crb in $(kubectl get clusterrolebinding -o name 2>/dev/null); do
+  crb_name=$(echo "$crb" | sed 's|.*/||')
+  role_ref=$(kubectl get "$crb" -o jsonpath='{.roleRef.name}' 2>/dev/null)
+  if echo "$crb_name $role_ref" | grep -qE "$LEFTOVER_REGEX"; then
+    kubectl delete "$crb" --ignore-not-found >/dev/null 2>&1 || true
+  fi
+done
 
 kubectl get clusterrole -o name 2>/dev/null \
   | grep -E "$LEFTOVER_REGEX" \
@@ -150,43 +197,44 @@ kubectl get validatingwebhookconfiguration -o name 2>/dev/null \
   | grep -E "$LEFTOVER_REGEX" \
   | xargs -r kubectl delete --ignore-not-found >/dev/null 2>&1 || true
 
-# APIServices aggregati registrati da Rancher (es. ext.cattle.io)
+# APIServices aggregati: Rancher (.cattle.io), Traefik (.traefik.io / hub.traefik.io), Fleet
 kubectl get apiservice -o name 2>/dev/null \
-  | grep -E '\.cattle\.io$' \
+  | grep -E '\.(cattle|traefik|fleet)\.io$|hub\.traefik\.io$' \
   | xargs -r kubectl delete --ignore-not-found >/dev/null 2>&1 || true
 
 echo "  Cluster-wide leftovers rimossi."
 
 # ---------------------------------------------------------------------------
-# 8. Repository Helm locali
+# 9. Repository Helm locali
 # ---------------------------------------------------------------------------
-log "8/9 Rimozione repository Helm"
+log "9/10 Rimozione repository Helm"
 helm repo remove rancher-stable 2>/dev/null || echo "  - rancher-stable: non presente"
 helm repo remove jetstack       2>/dev/null || echo "  - jetstack: non presente"
 helm repo remove traefik        2>/dev/null || echo "  - traefik: non presente"
 
 # ---------------------------------------------------------------------------
-# 9. Verifica finale
+# 10. Verifica finale
 # ---------------------------------------------------------------------------
-log "9/9 Verifica finale"
+log "10/10 Verifica finale"
 remaining_crds=$(kubectl get crd 2>/dev/null | grep -cE "$RANCHER_CRD_REGEX|$CERTMGR_CRD_REGEX" || true)
-remaining_ns=0
-for ns in "${RANCHER_NAMESPACES[@]}"; do
-  if kubectl get ns "$ns" >/dev/null 2>&1; then
-    remaining_ns=$((remaining_ns + 1))
-  fi
-done
+remaining_ns=$(kubectl get ns -o name 2>/dev/null | sed 's|namespace/||' \
+                | grep -cE "$RANCHER_NS_PATTERN" || true)
+remaining_pods=$(kubectl get pods -A --no-headers 2>/dev/null \
+                  | awk -v p="$RANCHER_NS_PATTERN" '$1 ~ p' \
+                  | wc -l)
 
 echo "  CRD Rancher/cert-manager residui: ${remaining_crds}"
-echo "  Namespace Rancher residui:        ${remaining_ns}"
+echo "  Namespace Rancher/Fleet residui:  ${remaining_ns}"
+echo "  Pod fantasma residui:             ${remaining_pods}"
 
-if [ "$remaining_crds" -eq 0 ] && [ "$remaining_ns" -eq 0 ]; then
+if [ "$remaining_crds" -eq 0 ] && [ "$remaining_ns" -eq 0 ] && [ "$remaining_pods" -eq 0 ]; then
   log "DISINSTALLAZIONE COMPLETATA - cluster AKS intatto"
   echo "Per reinstallare: ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass"
 else
   log "DISINSTALLAZIONE COMPLETATA con residui"
-  echo "Alcune risorse sono ancora presenti. Esegui:"
-  echo "  kubectl get crd | grep -E '${RANCHER_CRD_REGEX}|${CERTMGR_CRD_REGEX}'"
-  echo "  kubectl get ns  | grep -E 'cattle|fleet|traefik|cert-manager|^local '"
-  echo "e rilancia lo script. Se persiste, rimuovi a mano i finalizer."
+  echo "Alcune risorse sono ancora presenti. Diagnostica:"
+  echo "  kubectl get crd  | grep -E '${RANCHER_CRD_REGEX}|${CERTMGR_CRD_REGEX}'"
+  echo "  kubectl get ns   | grep -E '${RANCHER_NS_PATTERN}'"
+  echo "  kubectl get pods -A | grep -E '${RANCHER_NS_PATTERN}'"
+  echo "Rilancia lo script. Se persiste, rimuovi a mano i finalizer del singolo oggetto."
 fi
