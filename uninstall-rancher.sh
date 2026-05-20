@@ -7,6 +7,15 @@
 # Risolve gli stuck "CRD/namespace in Terminating" rimuovendo i finalizer
 # (Rancher e' gia' down -> i finalizer non vengono piu' processati).
 #
+# Garanzie di sicurezza (difesa in profondita'):
+#   - Pattern restrittivi per CRD / namespace / risorse cluster-wide
+#   - Lista PROTECTED_NS esplicita che lo script rifiuta sempre di toccare
+#   - Pre-flight check che blocca lo script se la lista hardcoded include
+#     per errore un namespace protetto
+#   - Nessuna operazione su Nodes, PersistentVolumes/Claims, StorageClass,
+#     componenti AKS (kube-system, cloud-node-manager, CSI driver, CoreDNS,
+#     kube-proxy, metrics-server, konnectivity, container-insights)
+#
 # Dipendenze: kubectl, helm, jq.
 
 log() { printf "\n=== %s ===\n" "$*"; }
@@ -38,12 +47,48 @@ RANCHER_NAMESPACES=(
 # cattle-local-user-passwords, cluster-fleet-local-local-1a3d67d0a899.
 RANCHER_NS_PATTERN='^(cattle-|cluster-fleet-|fleet-|local$|traefik$|cert-manager$)'
 
+# Safety guard: namespace che lo script NON deve mai toccare, anche se
+# finissero (per bug o estensioni future del pattern) in RANCHER_NAMESPACES.
+# Includono il control plane di Kubernetes e i componenti AKS managed.
+PROTECTED_NS=(
+  kube-system
+  kube-public
+  kube-node-lease
+  default
+  gatekeeper-system
+  azure-arc
+  azure-extensions-usage-system
+  aks-command
+  calico-system
+  tigera-operator
+  app-routing-system
+)
+
+is_protected_ns() {
+  local target=$1
+  local protected
+  for protected in "${PROTECTED_NS[@]}"; do
+    [ "$target" = "$protected" ] && return 0
+  done
+  return 1
+}
+
+# Pre-flight: blocca lo script se la lista hardcoded contiene per errore
+# un namespace protetto (defence in depth contro modifiche future).
+for ns in "${RANCHER_NAMESPACES[@]}"; do
+  if is_protected_ns "$ns"; then
+    echo "ERRORE FATALE: namespace protetto '$ns' presente in RANCHER_NAMESPACES."
+    echo "Lo script si rifiuta di procedere. Rimuovi '$ns' dalla lista e riprova."
+    exit 2
+  fi
+done
+
 log "INIZIO DISINSTALLAZIONE RANCHER"
 
 # ---------------------------------------------------------------------------
 # 1. Helm uninstall (Rancher, Traefik, cert-manager)
 # ---------------------------------------------------------------------------
-log "1/9 Helm uninstall"
+log "1/10 Helm uninstall"
 helm uninstall rancher      -n cattle-system 2>/dev/null || echo "  - rancher: gia' rimosso"
 helm uninstall traefik      -n traefik       2>/dev/null || echo "  - traefik: gia' rimosso"
 helm uninstall cert-manager -n cert-manager  2>/dev/null || echo "  - cert-manager: gia' rimosso"
@@ -51,7 +96,7 @@ helm uninstall cert-manager -n cert-manager  2>/dev/null || echo "  - cert-manag
 # ---------------------------------------------------------------------------
 # 2. Attendi che i pod Rancher escano (evita race con i finalizer)
 # ---------------------------------------------------------------------------
-log "2/9 Attendo terminazione pod Rancher (max 60s)"
+log "2/10 Attendo terminazione pod Rancher (max 60s)"
 kubectl wait --for=delete pod -n cattle-system -l app=rancher --timeout=60s 2>/dev/null \
   || echo "  - nessun pod o timeout (procedo)"
 
@@ -59,7 +104,7 @@ kubectl wait --for=delete pod -n cattle-system -l app=rancher --timeout=60s 2>/d
 # 3. Rimuovi i finalizer da TUTTE le CR Rancher (sotto *.cattle.io)
 #    Senza Rancher running i finalizer restano e bloccano la cancellazione.
 # ---------------------------------------------------------------------------
-log "3/9 Rimozione finalizer dalle Custom Resource Rancher"
+log "3/10 Rimozione finalizer dalle Custom Resource Rancher"
 for api in $(kubectl api-resources --verbs=list -o name 2>/dev/null | grep -E "$RANCHER_CRD_REGEX"); do
   # Namespaced
   while IFS= read -r line; do
@@ -81,7 +126,7 @@ done
 # ---------------------------------------------------------------------------
 # 4. Rimuovi i CRD Rancher (prima togli i finalizer del CRD stesso, poi delete con wait)
 # ---------------------------------------------------------------------------
-log "4/9 Rimozione CRD Rancher (*.cattle.io)"
+log "4/10 Rimozione CRD Rancher (*.cattle.io)"
 mapfile -t rancher_crds < <(kubectl get crd -o name 2>/dev/null | grep -E "$RANCHER_CRD_REGEX")
 if [ ${#rancher_crds[@]} -gt 0 ]; then
   for crd in "${rancher_crds[@]}"; do
@@ -96,7 +141,7 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Rimuovi i CRD cert-manager
 # ---------------------------------------------------------------------------
-log "5/9 Rimozione CRD cert-manager"
+log "5/10 Rimozione CRD cert-manager"
 mapfile -t cm_crds < <(kubectl get crd -o name 2>/dev/null | grep -E "$CERTMGR_CRD_REGEX")
 if [ ${#cm_crds[@]} -gt 0 ]; then
   for crd in "${cm_crds[@]}"; do
@@ -115,9 +160,15 @@ fi
 # ---------------------------------------------------------------------------
 log "6/10 Rimozione namespace Rancher / Traefik / cert-manager"
 
-# Estendi RANCHER_NAMESPACES con i ns dinamici che matchano il pattern
+# Estendi RANCHER_NAMESPACES con i ns dinamici che matchano il pattern.
+# Doppio filtro di sicurezza: anche se il pattern catturasse un ns protetto
+# (non dovrebbe mai), is_protected_ns lo esclude esplicitamente.
 while IFS= read -r dyn_ns; do
   [ -z "$dyn_ns" ] && continue
+  if is_protected_ns "$dyn_ns"; then
+    echo "  ! SKIP namespace protetto matchato per errore: $dyn_ns"
+    continue
+  fi
   if [[ ! " ${RANCHER_NAMESPACES[*]} " =~ " ${dyn_ns} " ]]; then
     RANCHER_NAMESPACES+=("$dyn_ns")
     echo "  + scoperto ns dinamico: $dyn_ns"
@@ -125,6 +176,10 @@ while IFS= read -r dyn_ns; do
 done < <(kubectl get ns -o name 2>/dev/null | sed 's|namespace/||' | grep -E "$RANCHER_NS_PATTERN")
 
 for ns in "${RANCHER_NAMESPACES[@]}"; do
+  if is_protected_ns "$ns"; then
+    echo "  ! SKIP $ns (namespace protetto)"
+    continue
+  fi
   if kubectl get ns "$ns" >/dev/null 2>&1; then
     echo "  - $ns: delete"
     kubectl delete ns "$ns" --wait=false --ignore-not-found >/dev/null
@@ -136,6 +191,9 @@ sleep 10
 
 # Forza l'uscita dei namespace stuck (rimuove i finalizer via API finalize)
 for ns in "${RANCHER_NAMESPACES[@]}"; do
+  if is_protected_ns "$ns"; then
+    continue
+  fi
   phase=$(kubectl get ns "$ns" -o jsonpath='{.status.phase}' 2>/dev/null) || continue
   if [ "$phase" = "Terminating" ]; then
     echo "  - $ns stuck in Terminating, rimozione forzata finalizer"
@@ -157,6 +215,10 @@ while IFS= read -r line; do
   [ -z "$line" ] && continue
   ns=$(echo "$line" | awk '{print $1}')
   pod=$(echo "$line" | awk '{print $2}')
+  # Doppia sicurezza: filtra esplicitamente i namespace protetti
+  if is_protected_ns "$ns"; then
+    continue
+  fi
   kubectl delete pod -n "$ns" "$pod" --force --grace-period=0 >/dev/null 2>&1 \
     && ghost_count=$((ghost_count + 1)) || true
 done < <(kubectl get pods -A --no-headers 2>/dev/null \
