@@ -17,13 +17,16 @@ _job_state = {
 }
 
 COMMANDS = {
-    'vault_main':      {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault.yml'],                                          'needs_vault': True},
-    'vault_cavalid':   {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault_cavalid.yml'],                                  'needs_vault': True},
-    'dryrun_ca_valid': {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid',    '--check', '--diff'],            'needs_vault': True},
-    'dryrun_self':     {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed', '--check', '--diff'],            'needs_vault': True},
-    'deploy_ca_valid': {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid'],                                    'needs_vault': True},
-    'deploy_self':     {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed'],                                 'needs_vault': True},
-    'uninstall':       {'exe': 'bash',             'args': ['uninstall-rancher.sh'],                                                      'needs_vault': False},
+    'vault_main':             {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault.yml'],                                          'needs_vault': True},
+    'vault_cavalid':          {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault_cavalid.yml'],                                  'needs_vault': True},
+    'vault_storage':          {'exe': 'ansible-vault',    'args': ['view', 'group_vars/all/vault_storage.yml'],                                  'needs_vault': True},
+    'dryrun_ca_valid':        {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid',    '--check', '--diff'],            'needs_vault': True},
+    'dryrun_self':            {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed', '--check', '--diff'],            'needs_vault': True},
+    'dryrun_aks_static_pv':   {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'aks_static_pv',       '--check', '--diff'],            'needs_vault': True},
+    'deploy_ca_valid':        {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_ca_valid'],                                    'needs_vault': True},
+    'deploy_self':            {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'rancher_self_signed'],                                 'needs_vault': True},
+    'deploy_aks_static_pv':   {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'aks_static_pv'],                                       'needs_vault': True},
+    'uninstall':              {'exe': 'bash',             'args': ['uninstall-rancher.sh'],                                                      'needs_vault': False},
 }
 
 

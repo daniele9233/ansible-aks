@@ -525,7 +525,7 @@
                 <input type="password" class="field !pr-10 vault-pw" placeholder="Enter vault password" data-pw-for="vault" />
                 <button class="absolute right-2 top-1/2 -translate-y-1/2 icon-btn !w-7 !h-7" data-toggle-pw><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
               </div>
-              <p class="text-[11px] text-fg-dim mt-2">Required to decrypt vault.yml and vault_cavalid.yml.</p>
+              <p class="text-[11px] text-fg-dim mt-2">Required to decrypt vault.yml, vault_cavalid.yml and vault_storage.yml.</p>
             </div>
 
             <div class="grid grid-cols-2 gap-4 max-w-[640px]">
@@ -550,6 +550,17 @@
                 </div>
                 <p class="text-[12px] text-fg-mute mb-4">CA-valid certificate bundle for the trusted Rancher deployment.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="vault_cavalid" data-vault><i data-lucide="eye" class="w-4 h-4"></i>View vault_cavalid.yml</button>
+              </div>
+              <div class="card card-hover p-5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-9 h-9 rounded-md bg-ink-500 border border-rule flex items-center justify-center"><i data-lucide="hard-drive" class="w-4 h-4 text-warn"></i></div>
+                  <div>
+                    <div class="font-medium text-[14px]">vault_storage.yml</div>
+                    <div class="text-[11px] text-fg-mute font-mono">group_vars/all/vault_storage.yml</div>
+                  </div>
+                </div>
+                <p class="text-[12px] text-fg-mute mb-4">Azure Managed Disk identifiers (subscription, RG, disk name) for the static PV role.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="vault_storage" data-vault><i data-lucide="eye" class="w-4 h-4"></i>View vault_storage.yml</button>
               </div>
             </div>
             <button class="btn btn-ghost btn-sm mt-5" data-open-files="vault"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View source files</button>
@@ -591,6 +602,14 @@
                 <div class="font-medium text-[14px] mb-1">Self-Signed mode</div>
                 <p class="text-[12px] text-fg-mute mb-4">Simulate Rancher install generating its own self-signed cert.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="dryrun_self" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run</button>
+              </div>
+              <div class="card card-hover p-5">
+                <div class="flex items-center gap-3 mb-2">
+                  <span class="badge badge-info"><span class="dot"></span>tag: aks_static_pv</span>
+                </div>
+                <div class="font-medium text-[14px] mb-1">Static PV (Azure Disk)</div>
+                <p class="text-[12px] text-fg-mute mb-4">Simulate binding of an existing Azure Managed Disk as PersistentVolume + PVC.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="dryrun_aks_static_pv" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run</button>
               </div>
             </div>
 
@@ -638,6 +657,11 @@
                 <div class="font-medium text-[14px] mb-1">Deploy · Self-Signed</div>
                 <p class="text-[12px] text-fg-mute mb-4">Install Rancher with its bundled self-signed certificate.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="deploy_self" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Self-Signed</button>
+              </div>
+              <div class="card card-hover p-5">
+                <div class="font-medium text-[14px] mb-1">Deploy · Static PV (Azure Disk)</div>
+                <p class="text-[12px] text-fg-mute mb-4">Bind an existing Azure Managed Disk as PersistentVolume + PVC. Reclaim policy: Retain.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="deploy_aks_static_pv" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Static PV</button>
               </div>
             </div>
             <button class="btn btn-ghost btn-sm mt-5" data-open-files="deploy"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View playbook files</button>
@@ -915,13 +939,16 @@
 const API = '';
 const HISTORY_KEY = 'aks-job-history';
 const ACTION_LABEL = {
-  vault_main:      { name:'View vault.yml',          type:'Vault' },
-  vault_cavalid:   { name:'View vault_cavalid.yml',  type:'Vault' },
-  dryrun_ca_valid: { name:'Dry-Run CA-Valid',        type:'Dry-Run' },
-  dryrun_self:     { name:'Dry-Run Self-Signed',     type:'Dry-Run' },
-  deploy_ca_valid: { name:'Deploy CA-Valid',         type:'Deploy' },
-  deploy_self:     { name:'Deploy Self-Signed',      type:'Deploy' },
-  uninstall:       { name:'Uninstall Rancher',       type:'Uninstall' },
+  vault_main:             { name:'View vault.yml',          type:'Vault' },
+  vault_cavalid:          { name:'View vault_cavalid.yml',  type:'Vault' },
+  vault_storage:          { name:'View vault_storage.yml',  type:'Vault' },
+  dryrun_ca_valid:        { name:'Dry-Run CA-Valid',        type:'Dry-Run' },
+  dryrun_self:            { name:'Dry-Run Self-Signed',     type:'Dry-Run' },
+  dryrun_aks_static_pv:   { name:'Dry-Run Static PV',       type:'Dry-Run' },
+  deploy_ca_valid:        { name:'Deploy CA-Valid',         type:'Deploy' },
+  deploy_self:            { name:'Deploy Self-Signed',      type:'Deploy' },
+  deploy_aks_static_pv:   { name:'Deploy Static PV',        type:'Deploy' },
+  uninstall:              { name:'Uninstall Rancher',       type:'Uninstall' },
 };
 
 const $ = (sel, root=document) => root.querySelector(sel);
@@ -1646,21 +1673,24 @@ function hlBash(e) {
    ============================================================ */
 const SCREEN_SOURCE_FILES = {
   vault: [
-    { path:'group_vars/all/main.yml',         label:'main.yml' },
+    { path:'group_vars/all/main.yml',          label:'main.yml' },
     { path:'group_vars/all/vault.yml',         label:'vault.yml' },
     { path:'group_vars/all/vault_cavalid.yml', label:'vault_cavalid.yml' },
+    { path:'group_vars/all/vault_storage.yml', label:'vault_storage.yml' },
   ],
   dryrun: [
     { path:'site.yml',                                                              label:'site.yml' },
     { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
     { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
+    { path:'roles/aks_static_pv_install/tasks/main.yml',                            label:'aks_static_pv_install.yml' },
   ],
   deploy: [
     { path:'site.yml',                                                              label:'site.yml' },
     { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
     { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
+    { path:'roles/aks_static_pv_install/tasks/main.yml',                            label:'aks_static_pv_install.yml' },
   ],
   uninstall: [
     { path:'uninstall-rancher.sh', label:'uninstall-rancher.sh' },
