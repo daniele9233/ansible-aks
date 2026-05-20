@@ -17,8 +17,9 @@
 #
 # Prima di usare rancher_ca_valid: completare il fullchain in vault_cavalid.yml
 #   e cifrarlo con ansible-vault.
-# Prima di usare aks_static_pv: aggiungere al vault le variabili
-#   vault_azure_subscription_id, vault_azure_resource_group, vault_azure_disk_name.
+# Prima di usare aks_static_pv: completare e cifrare il vault dedicato
+#   group_vars/all/vault_storage.yml (variabili vault_azure_subscription_id,
+#   vault_azure_resource_group, vault_azure_disk_name).
 
 - name: Install Rancher on AKS
   hosts: localhost

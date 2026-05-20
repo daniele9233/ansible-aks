@@ -30,8 +30,8 @@ traefik_chart_ref: "traefik/traefik"
 # ---------------------------------------------------------------------------
 # Static PersistentVolume su Azure Managed Disk gia' esistente
 # Usato dal role aks_static_pv_install (tag: aks_static_pv)
-# Identificatori sensibili nel vault: vault_azure_subscription_id /
-# vault_azure_resource_group / vault_azure_disk_name
+# Identificatori sensibili nel vault dedicato group_vars/all/vault_storage.yml:
+#   vault_azure_subscription_id, vault_azure_resource_group, vault_azure_disk_name
 # ---------------------------------------------------------------------------
 aks_static_pv_name: "pv-disco-aks-test-iac"
 aks_static_pvc_name: "pvc-disco-aks-test-iac"

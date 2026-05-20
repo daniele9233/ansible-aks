@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# Vault dedicato agli identificatori Azure per lo storage statico (AKS).
+# Usato dal role aks_static_pv_install.
+#
+# 1) Sostituisci i placeholder con i valori reali del tuo ambiente.
+# 2) Cifra il file prima di committare:
+#      ansible-vault encrypt group_vars/all/vault_storage.yml \
+#        --vault-password-file .vault_pass
+# 3) Per modifiche successive:
+#      ansible-vault edit group_vars/all/vault_storage.yml \
+#        --vault-password-file .vault_pass
+#
+# NON committare MAI questo file in chiaro con i valori reali.
+# ---------------------------------------------------------------------------
+
+vault_azure_subscription_id: "<INSERIRE_SUBSCRIPTION_ID>"
+vault_azure_resource_group:  "<INSERIRE_RESOURCE_GROUP>"
+vault_azure_disk_name:       "<INSERIRE_DISK_NAME>"
