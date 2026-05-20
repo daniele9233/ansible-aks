@@ -26,3 +26,27 @@ traefik_chart_version: "33.2.1"
 traefik_helm_repo_name: "traefik"
 traefik_helm_repo_url: "https://traefik.github.io/charts"
 traefik_chart_ref: "traefik/traefik"
+
+# ---------------------------------------------------------------------------
+# Static PersistentVolume su Azure Managed Disk gia' esistente
+# Usato dal role aks_static_pv_install (tag: aks_static_pv)
+# Identificatori sensibili nel vault: vault_azure_subscription_id /
+# vault_azure_resource_group / vault_azure_disk_name
+# ---------------------------------------------------------------------------
+aks_static_pv_name: "pv-disco-aks-test-iac"
+aks_static_pvc_name: "pvc-disco-aks-test-iac"
+aks_static_pvc_namespace: "default"
+aks_static_pv_size: "16Gi"
+aks_static_pv_access_mode: "ReadWriteOnce"
+aks_static_pv_reclaim_policy: "Retain"
+aks_static_pv_sku_name: "Premium_LRS"
+aks_static_pv_zone: "westeurope-1"
+aks_static_pv_bind_timeout: 60
+aks_static_pv_labels:
+  app: "disco-aks-test-iac"
+  environment: "sviluppo"
+  managed-by: "iac"
+
+# volumeHandle costruito dai valori cifrati nel vault
+aks_static_pv_volume_handle: >-
+  /subscriptions/{{ vault_azure_subscription_id }}/resourceGroups/{{ vault_azure_resource_group }}/providers/Microsoft.Compute/disks/{{ vault_azure_disk_name }}

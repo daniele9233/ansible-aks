@@ -1,0 +1,108 @@
+---
+# Crea un PersistentVolume statico bound a un Azure Managed Disk gia' esistente,
+# piu' la relativa PVC nel namespace target. Nessuna StorageClass: binding diretto
+# PVC -> PV via volumeName, ciclo di vita del disco gestito fuori (IaC).
+#
+# Esecuzione:
+#   ansible-playbook site.yml --tags aks_static_pv --vault-password-file .vault_pass
+#
+# Prerequisiti:
+#   - Disco Azure gia' provisionato fuori (Terraform/Bicep/portale).
+#     I suoi identificatori vivono nel vault:
+#       vault_azure_subscription_id, vault_azure_resource_group, vault_azure_disk_name
+#   - Almeno un nodo AKS disponibile nella stessa zona del disco
+#     (variabile aks_static_pv_zone).
+
+# ---------------------------------------------------------------------------
+# STEP 1 — PersistentVolume con volumeHandle del disco esistente
+# ---------------------------------------------------------------------------
+- name: Apply PersistentVolume "{{ aks_static_pv_name }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: "{{ aks_static_pv_name }}"
+        labels: "{{ aks_static_pv_labels }}"
+      spec:
+        capacity:
+          storage: "{{ aks_static_pv_size }}"
+        accessModes:
+          - "{{ aks_static_pv_access_mode }}"
+        persistentVolumeReclaimPolicy: "{{ aks_static_pv_reclaim_policy }}"
+        storageClassName: ""
+        csi:
+          driver: disk.csi.azure.com
+          volumeHandle: "{{ aks_static_pv_volume_handle }}"
+          volumeAttributes:
+            skuName: "{{ aks_static_pv_sku_name }}"
+        nodeAffinity:
+          required:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - "{{ aks_static_pv_zone }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 2 — PVC con binding esplicito al PV sopra (volumeName)
+# ---------------------------------------------------------------------------
+- name: Apply PersistentVolumeClaim "{{ aks_static_pvc_name }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ aks_static_pvc_name }}"
+        namespace: "{{ aks_static_pvc_namespace }}"
+        labels: "{{ aks_static_pv_labels }}"
+      spec:
+        accessModes:
+          - "{{ aks_static_pv_access_mode }}"
+        storageClassName: ""
+        resources:
+          requests:
+            storage: "{{ aks_static_pv_size }}"
+        volumeName: "{{ aks_static_pv_name }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 3 — Attendi che la PVC passi in stato Bound
+# ---------------------------------------------------------------------------
+- name: Wait for PVC "{{ aks_static_pvc_name }}" to be Bound
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: PersistentVolumeClaim
+    name: "{{ aks_static_pvc_name }}"
+    namespace: "{{ aks_static_pvc_namespace }}"
+  register: pvc_status
+  retries: "{{ ((aks_static_pv_bind_timeout | int) / 5) | int }}"
+  delay: 5
+  until:
+    - pvc_status.resources | length > 0
+    - pvc_status.resources[0].status.phase | default('') == 'Bound'
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Riepilogo
+# ---------------------------------------------------------------------------
+- name: Static PV summary
+  ansible.builtin.debug:
+    msg:
+      - "PersistentVolume '{{ aks_static_pv_name }}' creato ({{ aks_static_pv_size }}, {{ aks_static_pv_sku_name }}, zona {{ aks_static_pv_zone }})"
+      - "PersistentVolumeClaim '{{ aks_static_pvc_name }}' Bound nel namespace '{{ aks_static_pvc_namespace }}'"
+      - "Reclaim policy: {{ aks_static_pv_reclaim_policy }} (il disco Azure NON viene cancellato dalla delete della PVC)"
+  when: not ansible_check_mode
+
+- name: Static PV dry-run summary
+  ansible.builtin.debug:
+    msg:
+      - "[DRY-RUN] Sarebbe creato PV '{{ aks_static_pv_name }}' ({{ aks_static_pv_size }}) -> {{ aks_static_pv_volume_handle }}"
+      - "[DRY-RUN] Sarebbe creata PVC '{{ aks_static_pvc_name }}' nel namespace '{{ aks_static_pvc_namespace }}'"
+  when: ansible_check_mode

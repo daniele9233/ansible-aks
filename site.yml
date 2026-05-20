@@ -12,8 +12,13 @@
 #   Solo Traefik (utile per provisioning standalone):
 #     ansible-playbook site.yml --tags traefik --vault-password-file .vault_pass
 #
+#   Static PV su Azure Managed Disk gia' esistente (provisioning statico):
+#     ansible-playbook site.yml --tags aks_static_pv --vault-password-file .vault_pass
+#
 # Prima di usare rancher_ca_valid: completare il fullchain in vault_cavalid.yml
 #   e cifrarlo con ansible-vault.
+# Prima di usare aks_static_pv: aggiungere al vault le variabili
+#   vault_azure_subscription_id, vault_azure_resource_group, vault_azure_disk_name.
 
 - name: Install Rancher on AKS
   hosts: localhost
@@ -54,4 +59,15 @@
         tasks_from: 00-rancher-CAValid-install.yml
       tags:
         - rancher_ca_valid
+        - never
+
+    # -------------------------------------------------------------------------
+    # OPZIONE C: Static PersistentVolume bound a un Azure Managed Disk esistente
+    # Provisioning statico: niente StorageClass, ciclo di vita del disco fuori IaC.
+    # -------------------------------------------------------------------------
+    - name: Create static PersistentVolume bound to existing Azure Managed Disk
+      ansible.builtin.import_role:
+        name: aks_static_pv_install
+      tags:
+        - aks_static_pv
         - never
