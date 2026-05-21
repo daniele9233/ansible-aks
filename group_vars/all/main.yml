@@ -27,6 +27,15 @@ traefik_helm_repo_name: "traefik"
 traefik_helm_repo_url: "https://traefik.github.io/charts"
 traefik_chart_ref: "traefik/traefik"
 
+# IP statico riservato lato Azure per il LoadBalancer di Traefik.
+# Evita che AKS riassegni un IP dinamico diverso ad ogni reinstall/upgrade.
+# L'IP appartiene alla subnet della VNet del cluster (RFC1918) -> Internal LB.
+# Annotation applicata al Service Traefik:
+#   service.beta.kubernetes.io/azure-load-balancer-ipv4
+#   service.beta.kubernetes.io/azure-load-balancer-internal
+traefik_loadbalancer_ip: "10.207.201.138"
+traefik_loadbalancer_internal: true
+
 # ---------------------------------------------------------------------------
 # Static PersistentVolume su Azure Managed Disk gia' esistente
 # Usato dal role aks_static_pv_install (tag: aks_static_pv)

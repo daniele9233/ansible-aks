@@ -42,9 +42,14 @@
     release_namespace: "{{ traefik_namespace }}"
     create_namespace: false
     values:
-      # Esposizione LoadBalancer (AKS provisiona IP automaticamente)
+      # Esposizione LoadBalancer con IP statico riservato lato Azure.
+      # Le annotation forzano AKS a usare sempre lo stesso IP (no IP dinamico
+      # ad ogni reinstall) e marcano il LB come Internal (IP RFC1918 in VNet).
       service:
         type: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/azure-load-balancer-ipv4: "{{ traefik_loadbalancer_ip }}"
+          service.beta.kubernetes.io/azure-load-balancer-internal: "{{ traefik_loadbalancer_internal | string | lower }}"
       # Entrypoints: 80 (web) e 443 (websecure con TLS)
       ports:
         web:
@@ -122,7 +127,8 @@
   ansible.builtin.debug:
     msg:
       - "Traefik {{ traefik_chart_version }} installato in namespace '{{ traefik_namespace }}'"
-      - "LoadBalancer endpoint: {{ traefik_lb_endpoint }}"
+      - "LoadBalancer endpoint: {{ traefik_lb_endpoint }} (IP statico riservato)"
+      - "LoadBalancer type: {{ 'Internal' if traefik_loadbalancer_internal else 'Public' }} (Azure)"
       - "IngressClass 'traefik' = default -> raccoglie Ingress senza classe"
       - "Entrypoints: web (80, redirect -> 443), websecure (443, TLS)"
       - "DNS / hosts: {{ rancher_hostname }} -> {{ traefik_lb_endpoint }}"
@@ -132,6 +138,7 @@
   ansible.builtin.debug:
     msg:
       - "[DRY-RUN] Traefik {{ traefik_chart_version }} sarebbe installato in '{{ traefik_namespace }}'"
-      - "Service type: LoadBalancer (AKS provisionera' un IP)"
+      - "Service type: LoadBalancer con IP statico {{ traefik_loadbalancer_ip }}"
+      - "LoadBalancer Internal: {{ traefik_loadbalancer_internal }}"
       - "IngressClass 'traefik' configurata come default"
   when: ansible_check_mode

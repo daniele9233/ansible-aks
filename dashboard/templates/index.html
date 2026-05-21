@@ -773,6 +773,18 @@
               </div>
             </div>
           </div>
+
+          <div class="mt-3 p-3.5 rounded-md border" style="background:rgba(96,165,250,0.06); border-color:rgba(96,165,250,0.30)">
+            <div class="flex gap-3">
+              <i data-lucide="anchor" class="w-4 h-4 shrink-0 mt-0.5" style="color:#60a5fa"></i>
+              <div class="text-[12px]">
+                <div class="font-medium" style="color:#bfdbfe">LoadBalancer Traefik · IP statico</div>
+                <p class="text-fg-mute mt-1">Il Service Traefik usa annotation Azure per fissare l'IP del LoadBalancer (Internal LB). Senza, AKS ne assegnava uno dinamico diverso ad ogni reinstall.</p>
+                <div class="code mt-2"><span class="font-mono">azure-load-balancer-ipv4: <span class="a-grn">10.207.201.138</span></span><button class="icon-btn !w-7 !h-7" data-copy="10.207.201.138"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button></div>
+                <p class="text-fg-mute mt-2">L'IP è in VNet (RFC1918) e non è raggiungibile direttamente da Windows: l'accesso continua a passare per SSH tunnel + <span class="font-mono text-fg">kubectl port-forward</span>.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ========== SELF-SIGNED ========== -->

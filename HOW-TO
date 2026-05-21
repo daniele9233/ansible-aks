@@ -115,8 +115,15 @@ Questo vale per ENTRAMBE le modalita' di deploy.
                -> [hosts file] -> 127.0.0.1:8443
                -> [SSH tunnel] -> VM:8443
                -> [kubectl port-forward] -> svc/traefik:443
-               -> [Traefik Ingress, TLS termination con cert AlmavivA]
+               -> [Traefik Ingress (LB Internal IP fisso 10.207.201.138),
+                   TLS termination con cert AlmavivA]
                -> pod Rancher
+
+    Nota IP LoadBalancer:
+        Il Service di Traefik usa annotation Azure per fissare l'IP del
+        LoadBalancer (10.207.201.138, Internal LB). Senza annotation AKS ne
+        rilasciava uno dinamico diverso ad ogni deploy. Variabili gestite in
+        group_vars/all/main.yml -> traefik_loadbalancer_ip / _internal.
 
     Perche' svc/traefik e non svc/rancher?
         Con la modalita' CA valida, Traefik e' l'Ingress Controller che gestisce
@@ -137,12 +144,18 @@ Questo vale per ENTRAMBE le modalita' di deploy.
 
         Perche'?
             Il browser deve risolvere l'FQDN rancher.app.iac-svil.almaviva.it
-            a localhost (127.0.0.1) invece che all'IP pubblico del LoadBalancer
-            Azure (20.103.21.72), che non e' raggiungibile dalla rete aziendale.
+            a localhost (127.0.0.1) invece che all'IP del LoadBalancer interno
+            Azure (10.207.201.138), che non e' raggiungibile dalla rete aziendale.
             Il file hosts ha precedenza sul DNS di sistema.
 
-        IMPORTANTE: se in precedenza avevi la riga con 20.103.21.72, sostituiscila
-        con 127.0.0.1. Devono essere mutuamente esclusive.
+        IMPORTANTE: se in precedenza avevi una riga con il vecchio IP pubblico
+        (20.103.21.72) o con l'attuale IP del LoadBalancer (10.207.201.138),
+        sostituiscila con 127.0.0.1. Devono essere mutuamente esclusive.
+
+        Nota: il LoadBalancer di Traefik ha ora un IP statico riservato lato Azure
+        (10.207.201.138). E' un Internal LoadBalancer e l'IP non cambia piu' ad
+        ogni reinstall, ma resta non raggiungibile direttamente da Windows fuori
+        dalla VNet (serve sempre il tunnel SSH + port-forward via VM).
 
     STEP 2 — SSH tunnel dal PC Windows (PowerShell o cmd):
 
