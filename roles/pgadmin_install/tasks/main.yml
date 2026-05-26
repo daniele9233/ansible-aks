@@ -4,11 +4,10 @@
 # pgadmin.app.iac-svil.almaviva.it con il cert wildcard AlmavivA
 # *.app.iac-svil.almaviva.it (stesso usato per Rancher CA Valid).
 #
-# Persistenza: subPath "{{ pgadmin_pvc_subpath }}" sulla PVC condivisa
-# {{ pgadmin_pvc_name }} creata dal role aks_static_pv_install. Lo stesso
-# Azure Managed Disk verra' poi condiviso con Grafana usando un subPath
-# diverso. NB: disco Azure = ReadWriteOnce, i pod che lo condividono devono
-# girare sullo stesso nodo (single replica + strategy: Recreate).
+# Persistenza: PVC DEDICATA "{{ pgadmin_pvc_name }}" creata dal role con la
+# StorageClass managed-csi di AKS (provisioning dinamico, un Azure Disk
+# Premium SSD da {{ pgadmin_pvc_size }}). Nessuna dipendenza dal disco
+# statico pvc-disco-aks-test-iac: ogni app ha il suo disco indipendente.
 #
 # Credenziali admin nel vault dedicato:
 #   group_vars/all/vault_pgadmin.yml
@@ -20,16 +19,54 @@
 #
 # Prerequisiti:
 #   - Traefik installato (--tags traefik)
-#   - PVC "{{ pgadmin_pvc_name }}" gia' Bound (--tags aks_static_pv)
 #   - vault_cavalid.yml decifrabile (serve il fullchain TLS wildcard)
 #   - vault_pgadmin.yml cifrato e compilato
 
 # ---------------------------------------------------------------------------
-# STEP 1 — TLS Secret nel namespace di pgAdmin (copia del wildcard AlmavivA)
+# STEP 0 — Namespace dedicato
 # ---------------------------------------------------------------------------
-# Il secret di Rancher (tls-rancher-ingress) vive in cattle-system.
+- name: Ensure namespace "{{ pgadmin_namespace }}" exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+
+# ---------------------------------------------------------------------------
+# STEP 1 — PVC dedicata (managed-csi, dynamic provisioning)
+# ---------------------------------------------------------------------------
+# La StorageClass managed-csi di AKS usa volumeBindingMode: WaitForFirstConsumer.
+# La PVC resta Pending finche' un pod che la referenzia non viene schedulato:
+# per questo il "wait for Bound" e' spostato DOPO la creazione del Deployment.
+- name: Apply PersistentVolumeClaim "{{ pgadmin_pvc_name }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ pgadmin_pvc_name }}"
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+      spec:
+        accessModes:
+          - "{{ pgadmin_pvc_access_mode }}"
+        storageClassName: "{{ pgadmin_pvc_storage_class }}"
+        resources:
+          requests:
+            storage: "{{ pgadmin_pvc_size }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 2 — TLS Secret nel namespace di pgAdmin (copia del wildcard AlmavivA)
+# ---------------------------------------------------------------------------
 # Gli Ingress sono namespaced: per terminare TLS in "{{ pgadmin_namespace }}"
-# serve un Secret separato con lo stesso fullchain wildcard.
+# serve un Secret separato con lo stesso fullchain wildcard di Rancher.
 - name: Create / update TLS secret "{{ pgadmin_tls_secret_name }}"
   no_log: true
   kubernetes.core.k8s:
@@ -49,7 +86,7 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 2 — Secret credenziali admin (PGADMIN_DEFAULT_EMAIL/PASSWORD)
+# STEP 3 — Secret credenziali admin (PGADMIN_DEFAULT_EMAIL/PASSWORD)
 # ---------------------------------------------------------------------------
 - name: Create / update pgAdmin admin Secret "{{ pgadmin_admin_secret_name }}"
   no_log: true
@@ -70,7 +107,7 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 3 — Deployment pgAdmin (1 replica, subPath sulla PVC condivisa)
+# STEP 4 — Deployment pgAdmin (1 replica, mount diretto sulla PVC dedicata)
 # ---------------------------------------------------------------------------
 - name: Apply Deployment "pgadmin"
   kubernetes.core.k8s:
@@ -97,25 +134,12 @@
             labels: "{{ pgadmin_labels }}"
           spec:
             securityContext:
-              # L'immagine ufficiale dpage/pgadmin4 gira come uid 5050 (pgadmin)
+              # L'immagine ufficiale dpage/pgadmin4 gira come uid 5050 (pgadmin).
+              # fsGroup: il volume montato eredita ownership 5050 ricorsivamente
+              # (la PVC e' dedicata, niente subPath -> niente fix permissions).
               runAsUser: 5050
               runAsGroup: 5050
               fsGroup: 5050
-            # initContainer: garantisce che il subPath sia di proprieta' 5050:5050
-            # alla prima creazione (kubelet crea il subdir come root 0755).
-            initContainers:
-              - name: fix-subpath-permissions
-                image: busybox:1.36
-                command:
-                  - sh
-                  - -c
-                  - "chown -R 5050:5050 /var/lib/pgadmin && chmod 700 /var/lib/pgadmin"
-                securityContext:
-                  runAsUser: 0
-                volumeMounts:
-                  - name: pgadmin-data
-                    mountPath: /var/lib/pgadmin
-                    subPath: "{{ pgadmin_pvc_subpath }}"
             containers:
               - name: pgadmin
                 image: "{{ pgadmin_image }}"
@@ -144,7 +168,6 @@
                 volumeMounts:
                   - name: pgadmin-data
                     mountPath: /var/lib/pgadmin
-                    subPath: "{{ pgadmin_pvc_subpath }}"
                 resources:
                   requests:
                     cpu: "{{ pgadmin_cpu_request }}"
@@ -175,7 +198,27 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 4 — Service ClusterIP (esposto solo internamente, l'Ingress fa il resto)
+# STEP 4.5 — Attendi che la PVC passi in Bound (sbloccata dal Deployment)
+# ---------------------------------------------------------------------------
+# Con managed-csi (WaitForFirstConsumer) la PVC resta Pending finche' kube
+# scheduler non assegna un pod a un nodo: a quel punto AKS provisiona il
+# disco Azure e fa il bind. Controlliamo qui, dopo il Deployment.
+- name: Wait for PVC "{{ pgadmin_pvc_name }}" to be Bound
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: PersistentVolumeClaim
+    name: "{{ pgadmin_pvc_name }}"
+    namespace: "{{ pgadmin_namespace }}"
+  register: pgadmin_pvc_status
+  retries: 30
+  delay: 5
+  until:
+    - pgadmin_pvc_status.resources | length > 0
+    - pgadmin_pvc_status.resources[0].status.phase | default('') == 'Bound'
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Service ClusterIP (esposto solo internamente, l'Ingress fa il resto)
 # ---------------------------------------------------------------------------
 - name: Apply Service "pgadmin"
   kubernetes.core.k8s:
@@ -199,7 +242,7 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 5 — Ingress Traefik con TLS termination (cert wildcard AlmavivA)
+# STEP 6 — Ingress Traefik con TLS termination (cert wildcard AlmavivA)
 # ---------------------------------------------------------------------------
 - name: Apply Ingress "pgadmin"
   kubernetes.core.k8s:
@@ -236,7 +279,7 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 6 — Attendi il rollout del Deployment
+# STEP 7 — Attendi il rollout del Deployment
 # ---------------------------------------------------------------------------
 - name: Wait for pgadmin deployment rollout
   kubernetes.core.k8s_info:
@@ -253,7 +296,7 @@
   when: not ansible_check_mode
 
 # ---------------------------------------------------------------------------
-# STEP 7 — Riepilogo
+# STEP 8 — Riepilogo
 # ---------------------------------------------------------------------------
 - name: pgAdmin installation summary
   ansible.builtin.debug:
@@ -261,7 +304,7 @@
       - "pgAdmin 4 installato nel namespace '{{ pgadmin_namespace }}'"
       - "URL:        https://{{ pgadmin_hostname }} (cert wildcard AlmavivA)"
       - "Image:      {{ pgadmin_image }}"
-      - "Storage:    PVC '{{ pgadmin_pvc_name }}' subPath '{{ pgadmin_pvc_subpath }}'"
+      - "Storage:    PVC '{{ pgadmin_pvc_name }}' ({{ pgadmin_pvc_size }}, {{ pgadmin_pvc_storage_class }})"
       - "TLS secret: '{{ pgadmin_tls_secret_name }}' (mirror del wildcard in '{{ pgadmin_namespace }}')"
       - "Admin user: nel vault group_vars/all/vault_pgadmin.yml"
       - "Replicas:   {{ pgadmin_deploy.resources[0].status.readyReplicas | default(0) }}/{{ pgadmin_deploy.resources[0].spec.replicas }}"
@@ -273,6 +316,6 @@
       - "[DRY-RUN] pgAdmin sarebbe installato in '{{ pgadmin_namespace }}'"
       - "Hostname:   https://{{ pgadmin_hostname }}"
       - "Image:      {{ pgadmin_image }}"
-      - "Storage:    subPath '{{ pgadmin_pvc_subpath }}' su PVC '{{ pgadmin_pvc_name }}'"
+      - "Storage:    PVC '{{ pgadmin_pvc_name }}' ({{ pgadmin_pvc_size }}, {{ pgadmin_pvc_storage_class }})"
       - "Ingress:    TLS via Secret '{{ pgadmin_tls_secret_name }}' (creato dal role)"
   when: ansible_check_mode

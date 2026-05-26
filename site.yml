@@ -25,7 +25,9 @@
 #   vault_azure_resource_group, vault_azure_disk_name).
 # Prima di usare pgadmin: completare e cifrare group_vars/all/vault_pgadmin.yml
 #   (vault_pgadmin_admin_email, vault_pgadmin_admin_password). pgadmin riusa
-#   il fullchain wildcard di vault_cavalid.yml e la PVC creata da aks_static_pv.
+#   il fullchain wildcard di vault_cavalid.yml. La PVC pvc-pgadmin (4Gi,
+#   managed-csi) viene creata automaticamente dal role nel namespace
+#   monitoring, senza dipendenza da aks_static_pv.
 
 - name: Install Rancher on AKS
   hosts: localhost
@@ -81,9 +83,11 @@
 
     # -------------------------------------------------------------------------
     # OPZIONE D: pgAdmin 4 (GUI web per database PostgreSQL ESTERNI)
-    # Richiede Traefik (Ingress) + PVC pvc-disco-aks-test-iac (subPath).
-    # Esposto su https://pgadmin.app.iac-svil.almaviva.it con cert wildcard
-    # AlmavivA (stesso usato per Rancher CA Valid).
+    # Richiede solo Traefik (Ingress). La PVC pvc-pgadmin (4Gi, managed-csi)
+    # viene creata automaticamente dal role nel namespace 'monitoring',
+    # senza dipendenza da aks_static_pv. Esposto su
+    # https://pgadmin.app.iac-svil.almaviva.it con cert wildcard AlmavivA
+    # (stesso usato per Rancher CA Valid).
     # -------------------------------------------------------------------------
     - name: Install pgAdmin 4 (web admin per PostgreSQL esterni)
       ansible.builtin.import_role:
