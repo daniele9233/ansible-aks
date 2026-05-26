@@ -1,0 +1,278 @@
+---
+# Installa pgAdmin 4 come GUI web per database PostgreSQL ESTERNI (standalone:
+# nessun Postgres nel cluster). Esposto via Traefik Ingress su
+# pgadmin.app.iac-svil.almaviva.it con il cert wildcard AlmavivA
+# *.app.iac-svil.almaviva.it (stesso usato per Rancher CA Valid).
+#
+# Persistenza: subPath "{{ pgadmin_pvc_subpath }}" sulla PVC condivisa
+# {{ pgadmin_pvc_name }} creata dal role aks_static_pv_install. Lo stesso
+# Azure Managed Disk verra' poi condiviso con Grafana usando un subPath
+# diverso. NB: disco Azure = ReadWriteOnce, i pod che lo condividono devono
+# girare sullo stesso nodo (single replica + strategy: Recreate).
+#
+# Credenziali admin nel vault dedicato:
+#   group_vars/all/vault_pgadmin.yml
+#     vault_pgadmin_admin_email
+#     vault_pgadmin_admin_password
+#
+# Esecuzione:
+#   ansible-playbook site.yml --tags pgadmin --ask-vault-pass
+#
+# Prerequisiti:
+#   - Traefik installato (--tags traefik)
+#   - PVC "{{ pgadmin_pvc_name }}" gia' Bound (--tags aks_static_pv)
+#   - vault_cavalid.yml decifrabile (serve il fullchain TLS wildcard)
+#   - vault_pgadmin.yml cifrato e compilato
+
+# ---------------------------------------------------------------------------
+# STEP 1 — TLS Secret nel namespace di pgAdmin (copia del wildcard AlmavivA)
+# ---------------------------------------------------------------------------
+# Il secret di Rancher (tls-rancher-ingress) vive in cattle-system.
+# Gli Ingress sono namespaced: per terminare TLS in "{{ pgadmin_namespace }}"
+# serve un Secret separato con lo stesso fullchain wildcard.
+- name: Create / update TLS secret "{{ pgadmin_tls_secret_name }}"
+  no_log: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ pgadmin_tls_secret_name }}"
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ vault_rancher_tls_crt_chain | b64encode }}"
+        tls.key: "{{ vault_rancher_tls_key | b64encode }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 2 — Secret credenziali admin (PGADMIN_DEFAULT_EMAIL/PASSWORD)
+# ---------------------------------------------------------------------------
+- name: Create / update pgAdmin admin Secret "{{ pgadmin_admin_secret_name }}"
+  no_log: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ pgadmin_admin_secret_name }}"
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+      type: Opaque
+      stringData:
+        PGADMIN_DEFAULT_EMAIL: "{{ pgadmin_admin_email }}"
+        PGADMIN_DEFAULT_PASSWORD: "{{ pgadmin_admin_password }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 3 — Deployment pgAdmin (1 replica, subPath sulla PVC condivisa)
+# ---------------------------------------------------------------------------
+- name: Apply Deployment "pgadmin"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: pgadmin
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+      spec:
+        replicas: "{{ pgadmin_replicas }}"
+        # Recreate: il vecchio pod viene terminato prima di crearne uno nuovo.
+        # Obbligatorio con PVC RWO + single replica (no rolling update).
+        strategy:
+          type: Recreate
+        selector:
+          matchLabels:
+            app: pgadmin
+        template:
+          metadata:
+            labels: "{{ pgadmin_labels }}"
+          spec:
+            securityContext:
+              # L'immagine ufficiale dpage/pgadmin4 gira come uid 5050 (pgadmin)
+              runAsUser: 5050
+              runAsGroup: 5050
+              fsGroup: 5050
+            # initContainer: garantisce che il subPath sia di proprieta' 5050:5050
+            # alla prima creazione (kubelet crea il subdir come root 0755).
+            initContainers:
+              - name: fix-subpath-permissions
+                image: busybox:1.36
+                command:
+                  - sh
+                  - -c
+                  - "chown -R 5050:5050 /var/lib/pgadmin && chmod 700 /var/lib/pgadmin"
+                securityContext:
+                  runAsUser: 0
+                volumeMounts:
+                  - name: pgadmin-data
+                    mountPath: /var/lib/pgadmin
+                    subPath: "{{ pgadmin_pvc_subpath }}"
+            containers:
+              - name: pgadmin
+                image: "{{ pgadmin_image }}"
+                imagePullPolicy: IfNotPresent
+                ports:
+                  - name: http
+                    containerPort: 80
+                envFrom:
+                  - secretRef:
+                      name: "{{ pgadmin_admin_secret_name }}"
+                env:
+                  - name: PGADMIN_LISTEN_PORT
+                    value: "80"
+                  # pgAdmin dietro un reverse proxy (Traefik) -> conta gli header
+                  # X-Forwarded-For / X-Forwarded-Proto per generare URL corretti.
+                  - name: PGADMIN_CONFIG_PROXY_X_FOR_COUNT
+                    value: "1"
+                  - name: PGADMIN_CONFIG_PROXY_X_PROTO_COUNT
+                    value: "1"
+                  - name: PGADMIN_CONFIG_PROXY_X_HOST_COUNT
+                    value: "1"
+                  - name: PGADMIN_CONFIG_PROXY_X_PORT_COUNT
+                    value: "1"
+                  - name: PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT
+                    value: "1"
+                volumeMounts:
+                  - name: pgadmin-data
+                    mountPath: /var/lib/pgadmin
+                    subPath: "{{ pgadmin_pvc_subpath }}"
+                resources:
+                  requests:
+                    cpu: "{{ pgadmin_cpu_request }}"
+                    memory: "{{ pgadmin_memory_request }}"
+                  limits:
+                    cpu: "{{ pgadmin_cpu_limit }}"
+                    memory: "{{ pgadmin_memory_limit }}"
+                readinessProbe:
+                  httpGet:
+                    path: /misc/ping
+                    port: http
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  httpGet:
+                    path: /misc/ping
+                    port: http
+                  initialDelaySeconds: 120
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            volumes:
+              - name: pgadmin-data
+                persistentVolumeClaim:
+                  claimName: "{{ pgadmin_pvc_name }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Service ClusterIP (esposto solo internamente, l'Ingress fa il resto)
+# ---------------------------------------------------------------------------
+- name: Apply Service "pgadmin"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: pgadmin
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+      spec:
+        type: ClusterIP
+        selector:
+          app: pgadmin
+        ports:
+          - name: http
+            port: 80
+            targetPort: http
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Ingress Traefik con TLS termination (cert wildcard AlmavivA)
+# ---------------------------------------------------------------------------
+- name: Apply Ingress "pgadmin"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: pgadmin
+        namespace: "{{ pgadmin_namespace }}"
+        labels: "{{ pgadmin_labels }}"
+        annotations:
+          kubernetes.io/ingress.class: "{{ pgadmin_ingress_class }}"
+          traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+          traefik.ingress.kubernetes.io/router.tls: "true"
+      spec:
+        ingressClassName: "{{ pgadmin_ingress_class }}"
+        tls:
+          - hosts:
+              - "{{ pgadmin_hostname }}"
+            secretName: "{{ pgadmin_tls_secret_name }}"
+        rules:
+          - host: "{{ pgadmin_hostname }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: pgadmin
+                      port:
+                        number: 80
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 6 — Attendi il rollout del Deployment
+# ---------------------------------------------------------------------------
+- name: Wait for pgadmin deployment rollout
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Deployment
+    name: pgadmin
+    namespace: "{{ pgadmin_namespace }}"
+  register: pgadmin_deploy
+  retries: 60
+  delay: 10
+  until:
+    - pgadmin_deploy.resources | length > 0
+    - pgadmin_deploy.resources[0].status.readyReplicas | default(0) == pgadmin_deploy.resources[0].spec.replicas
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 7 — Riepilogo
+# ---------------------------------------------------------------------------
+- name: pgAdmin installation summary
+  ansible.builtin.debug:
+    msg:
+      - "pgAdmin 4 installato nel namespace '{{ pgadmin_namespace }}'"
+      - "URL:        https://{{ pgadmin_hostname }} (cert wildcard AlmavivA)"
+      - "Image:      {{ pgadmin_image }}"
+      - "Storage:    PVC '{{ pgadmin_pvc_name }}' subPath '{{ pgadmin_pvc_subpath }}'"
+      - "TLS secret: '{{ pgadmin_tls_secret_name }}' (mirror del wildcard in '{{ pgadmin_namespace }}')"
+      - "Admin user: nel vault group_vars/all/vault_pgadmin.yml"
+      - "Replicas:   {{ pgadmin_deploy.resources[0].status.readyReplicas | default(0) }}/{{ pgadmin_deploy.resources[0].spec.replicas }}"
+  when: not ansible_check_mode
+
+- name: pgAdmin dry-run summary
+  ansible.builtin.debug:
+    msg:
+      - "[DRY-RUN] pgAdmin sarebbe installato in '{{ pgadmin_namespace }}'"
+      - "Hostname:   https://{{ pgadmin_hostname }}"
+      - "Image:      {{ pgadmin_image }}"
+      - "Storage:    subPath '{{ pgadmin_pvc_subpath }}' su PVC '{{ pgadmin_pvc_name }}'"
+      - "Ingress:    TLS via Secret '{{ pgadmin_tls_secret_name }}' (creato dal role)"
+  when: ansible_check_mode

@@ -1,0 +1,23 @@
+---
+# Vault credenziali pgAdmin 4 (consumato dal role pgadmin_install).
+#
+# Workflow (UNA VOLTA SOLA prima del primo run):
+#   1) Modifica i valori sotto con email e password reali dell'admin pgAdmin
+#   2) Cifra il file:
+#        ansible-vault encrypt group_vars/all/vault_pgadmin.yml
+#      (usa la STESSA password vault degli altri file gia' cifrati)
+#   3) Verifica con:
+#        ansible-vault view group_vars/all/vault_pgadmin.yml --ask-vault-pass
+#   4) Esegui il role:
+#        ansible-playbook site.yml --tags pgadmin --ask-vault-pass
+#
+# Le variabili sono referenziate in group_vars/all/main.yml:
+#   pgadmin_admin_email    -> {{ vault_pgadmin_admin_email }}
+#   pgadmin_admin_password -> {{ vault_pgadmin_admin_password }}
+#
+# IMPORTANTE: NON committare questo file in chiaro. Una volta cifrato,
+# la prima riga sara' "$ANSIBLE_VAULT;1.1;AES256" e a quel punto puoi
+# committare senza rischi.
+
+vault_pgadmin_admin_email: "admin@iac-svil.almaviva.it"
+vault_pgadmin_admin_password: "REPLACE_ME_BEFORE_ENCRYPTING"

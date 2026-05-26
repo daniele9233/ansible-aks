@@ -15,11 +15,17 @@
 #   Static PV su Azure Managed Disk gia' esistente (provisioning statico):
 #     ansible-playbook site.yml --tags aks_static_pv --vault-password-file .vault_pass
 #
+#   pgAdmin 4 (GUI web per PostgreSQL esterni) dietro Traefik:
+#     ansible-playbook site.yml --tags pgadmin --vault-password-file .vault_pass
+#
 # Prima di usare rancher_ca_valid: completare il fullchain in vault_cavalid.yml
 #   e cifrarlo con ansible-vault.
 # Prima di usare aks_static_pv: completare e cifrare il vault dedicato
 #   group_vars/all/vault_storage.yml (variabili vault_azure_subscription_id,
 #   vault_azure_resource_group, vault_azure_disk_name).
+# Prima di usare pgadmin: completare e cifrare group_vars/all/vault_pgadmin.yml
+#   (vault_pgadmin_admin_email, vault_pgadmin_admin_password). pgadmin riusa
+#   il fullchain wildcard di vault_cavalid.yml e la PVC creata da aks_static_pv.
 
 - name: Install Rancher on AKS
   hosts: localhost
@@ -71,4 +77,17 @@
         name: aks_static_pv_install
       tags:
         - aks_static_pv
+        - never
+
+    # -------------------------------------------------------------------------
+    # OPZIONE D: pgAdmin 4 (GUI web per database PostgreSQL ESTERNI)
+    # Richiede Traefik (Ingress) + PVC pvc-disco-aks-test-iac (subPath).
+    # Esposto su https://pgadmin.app.iac-svil.almaviva.it con cert wildcard
+    # AlmavivA (stesso usato per Rancher CA Valid).
+    # -------------------------------------------------------------------------
+    - name: Install pgAdmin 4 (web admin per PostgreSQL esterni)
+      ansible.builtin.import_role:
+        name: pgadmin_install
+      tags:
+        - pgadmin
         - never

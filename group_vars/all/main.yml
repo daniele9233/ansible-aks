@@ -59,3 +59,50 @@ aks_static_pv_labels:
 # volumeHandle costruito dai valori cifrati nel vault
 aks_static_pv_volume_handle: >-
   /subscriptions/{{ vault_azure_subscription_id }}/resourceGroups/{{ vault_azure_resource_group }}/providers/Microsoft.Compute/disks/{{ vault_azure_disk_name }}
+
+# ---------------------------------------------------------------------------
+# pgAdmin 4 — GUI web per database PostgreSQL ESTERNI (standalone, no Postgres
+# nel cluster). Esposto via Traefik Ingress su pgadmin.app.iac-svil.almaviva.it
+# (cert wildcard AlmavivA, stesso usato per Rancher CA Valid).
+#
+# Persistenza: subPath "pgadmin" sulla PVC condivisa pvc-disco-aks-test-iac
+# creata da aks_static_pv_install. Lo stesso disco verra' poi condiviso con
+# Grafana usando un subPath diverso (RWO -> stesso nodo, single replica).
+#
+# Credenziali admin nel vault dedicato:
+#   group_vars/all/vault_pgadmin.yml
+#     vault_pgadmin_admin_email
+#     vault_pgadmin_admin_password
+# Il vault va cifrato (ansible-vault encrypt) con la stessa password degli altri.
+# ---------------------------------------------------------------------------
+pgadmin_namespace: "default"
+pgadmin_hostname: "pgadmin.app.iac-svil.almaviva.it"
+pgadmin_image: "dpage/pgadmin4:8.13"
+pgadmin_replicas: 1
+
+# Storage: riusa la PVC creata da aks_static_pv_install con subPath dedicato.
+# Per condividere lo stesso disco Azure RWO con altri pod (es. Grafana) basta
+# usare un subPath diverso. Vincolo: i pod devono girare sullo stesso nodo.
+pgadmin_pvc_name: "{{ aks_static_pvc_name }}"
+pgadmin_pvc_subpath: "pgadmin"
+
+# Ingress + TLS
+pgadmin_ingress_class: "traefik"
+# Secret TLS pre-creato dal role nel namespace di pgAdmin, sourced dallo stesso
+# fullchain wildcard di vault_cavalid.yml (vault_rancher_tls_crt_chain/_key).
+pgadmin_tls_secret_name: "tls-pgadmin-ingress"
+
+# Secret con email/password admin, sourced dal vault_pgadmin.yml
+pgadmin_admin_secret_name: "pgadmin-admin"
+pgadmin_admin_email: "{{ vault_pgadmin_admin_email }}"
+pgadmin_admin_password: "{{ vault_pgadmin_admin_password }}"
+
+# Risorse (single replica, traffico basso)
+pgadmin_cpu_request: "100m"
+pgadmin_cpu_limit:   "500m"
+pgadmin_memory_request: "128Mi"
+pgadmin_memory_limit:   "512Mi"
+
+pgadmin_labels:
+  app: "pgadmin"
+  managed-by: "iac"
