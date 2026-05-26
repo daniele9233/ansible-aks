@@ -46,16 +46,29 @@ Esecuzione completa:
 9) ACCESSO ALLA CONSOLE RANCHER DA WINDOWS
 --------------------------------------------------------------------------------
 
-Il cluster AKS non ha un IP pubblico direttamente raggiungibile dalla rete
-aziendale. L'accesso avviene sempre tramite:
+Esistono due percorsi di accesso, in base alla modalita' di deploy scelta:
 
-    [PC Windows]
-        | SSH tunnel (porta cifrata via PEM)
-    [VM Linux azureuser@10.207.201.136]
-        | kubectl port-forward (traffico locale VM -> servizio K8s)
-    [Servizio Kubernetes]
+    MODALITA' A (self-signed): nessun Ingress davanti a Rancher, il pod risponde
+    direttamente in HTTPS con un cert self-signed di dynamiclistener. L'IP
+    interno della VM non e' raggiungibile dalla rete aziendale: servono SSH
+    tunnel + kubectl port-forward.
 
-Questo vale per ENTRAMBE le modalita' di deploy.
+        [PC Windows]
+            | SSH tunnel (porta cifrata via PEM)
+        [VM Linux azureuser@10.207.201.136]
+            | kubectl port-forward (traffico locale VM -> svc/rancher)
+        [pod Rancher]
+
+    MODALITA' B (CA valida, Traefik): il Service di Traefik espone un Internal
+    LoadBalancer su IP fisso (10.207.201.138). DNS aziendale e VNet/ExpressRoute
+    sono configurati per risolvere e raggiungere quell'IP, quindi il browser
+    arriva DIRETTAMENTE a Traefik senza tunnel ne' port-forward.
+
+        [PC Windows]
+            | DNS -> 10.207.201.138 (Internal LB), HTTPS diretto
+        [Service Traefik 10.207.201.138:443]
+            | TLS termination cert AlmavivA + Ingress route
+        [pod Rancher]
 
 
 === MODALITA' A: Certificato self-signed (cert-manager) ===
@@ -110,79 +123,105 @@ Questo vale per ENTRAMBE le modalita' di deploy.
     Playbook eseguito:
         ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass
 
-    Architettura accesso:
-        Browser -> rancher.app.iac-svil.almaviva.it:8443
-               -> [hosts file] -> 127.0.0.1:8443
-               -> [SSH tunnel] -> VM:8443
-               -> [kubectl port-forward] -> svc/traefik:443
-               -> [Traefik Ingress (LB Internal IP fisso 10.207.201.138),
-                   TLS termination con cert AlmavivA]
-               -> pod Rancher
+    Architettura accesso (DIRETTO, senza SSH tunnel ne' port-forward):
+
+        [PC Windows]
+            | DNS aziendale risolve rancher.app.iac-svil.almaviva.it -> 10.207.201.138
+            | HTTPS verso l'Internal LoadBalancer (raggiungibile dalla rete
+            |   aziendale via VNet peering / ExpressRoute)
+        [Service Traefik LoadBalancer 10.207.201.138:443]
+            | Traefik termina TLS con cert AlmavivA wildcard *.app.iac-svil.almaviva.it
+            | Ingress instrada al backend
+        [pod Rancher cattle-system]
 
     Nota IP LoadBalancer:
-        Il Service di Traefik usa annotation Azure per fissare l'IP del
+        Il Service di Traefik usa una annotation Azure per fissare l'IP del
         LoadBalancer (10.207.201.138, Internal LB). Senza annotation AKS ne
-        rilasciava uno dinamico diverso ad ogni deploy. Variabili gestite in
-        group_vars/all/main.yml -> traefik_loadbalancer_ip / _internal.
+        rilascerebbe uno dinamico diverso ad ogni deploy. Variabili gestite
+        in group_vars/all/main.yml -> traefik_loadbalancer_ip / _internal.
 
-    Perche' svc/traefik e non svc/rancher?
+    Perche' Traefik come Ingress?
         Con la modalita' CA valida, Traefik e' l'Ingress Controller che gestisce
         il TLS: legge il Secret "tls-rancher-ingress" (contenente il certificato
         wildcard *.app.iac-svil.almaviva.it + chiave privata) e lo presenta al
         browser. Rancher NON gestisce piu' il TLS direttamente: si aspetta che
         l'Ingress Controller faccia la terminazione SSL e gli passi il traffico
-        in chiaro (o via re-encrypt).
-        Se il port-forward puntasse a svc/rancher bypasserebbe Traefik e il
-        browser vedrebbe di nuovo il certificato self-signed di dynamiclistener.
+        in chiaro (o via re-encrypt). Il browser entra nel LoadBalancer di
+        Traefik, che termina TLS e instrada a Rancher: il cert AlmavivA non
+        viene mai bypassato.
 
-    STEP 1 — Modifica il file hosts di Windows (come Amministratore):
+    Verifica preliminare (una volta sola dal PC Windows):
+
+        nslookup rancher.app.iac-svil.almaviva.it
+        -> deve rispondere 10.207.201.138
+
+        Se il DNS non risolve o l'IP non e' raggiungibile, vedi sezione
+        FALLBACK piu' sotto.
+
+    STEP UNICO — Apri il browser su Windows:
+
+        https://rancher.app.iac-svil.almaviva.it
+
+        Nota porta: NON serve piu' :8443. La porta 443 standard e' esposta
+        direttamente dal Service Traefik (10.207.201.138:443).
+
+        Nota certificato: lucchetto verde, certificato valido.
+        - Emesso a:  *.app.iac-svil.almaviva.it  (AlmavivA FMO)
+        - Emesso da: AlmavivA Sub01
+        - Validita': 31/07/2025 - 31/07/2027
+
+    File hosts Windows:
+        NON serve piu' la riga "127.0.0.1 rancher.app.iac-svil.almaviva.it"
+        introdotta nelle versioni precedenti. Se l'avevi aggiunta, RIMUOVILA
+        oppure commentala con "#" davanti, altrimenti il browser punterebbe
+        a localhost (dove non c'e' nulla in ascolto se non hai un tunnel
+        attivo) invece che al LoadBalancer reale.
+
+    Perche' funziona ora senza tunnel (storico):
+        In precedenza il DNS aziendale non risolveva l'FQDN e/o l'Internal LB
+        non era raggiungibile dalla rete aziendale: servivano hosts file +
+        SSH tunnel + kubectl port-forward su svc/traefik. Ora il DNS aziendale
+        risponde 10.207.201.138 e la rotta verso quell'IP e' presente nella
+        VNet/ExpressRoute, quindi il browser si connette nativamente a Traefik.
+
+
+    --- FALLBACK (solo se DNS aziendale non risolve o rotta verso
+        10.207.201.138 non attiva, p.es. da una rete fuori VPN) ---
+
+    Metodo storico, ancora valido come backup:
+
+    FALLBACK STEP 1 — Modifica il file hosts di Windows (come Amministratore):
 
         File: C:\Windows\System32\drivers\etc\hosts
 
-        Aggiungi la riga:
+        Aggiungi (temporaneamente):
             127.0.0.1   rancher.app.iac-svil.almaviva.it
 
-        Perche'?
-            Il browser deve risolvere l'FQDN rancher.app.iac-svil.almaviva.it
-            a localhost (127.0.0.1) invece che all'IP del LoadBalancer interno
-            Azure (10.207.201.138), che non e' raggiungibile dalla rete aziendale.
-            Il file hosts ha precedenza sul DNS di sistema.
-
-        IMPORTANTE: se in precedenza avevi una riga con il vecchio IP pubblico
-        (20.103.21.72) o con l'attuale IP del LoadBalancer (10.207.201.138),
-        sostituiscila con 127.0.0.1. Devono essere mutuamente esclusive.
-
-        Nota: il LoadBalancer di Traefik ha ora un IP statico riservato lato Azure
-        (10.207.201.138). E' un Internal LoadBalancer e l'IP non cambia piu' ad
-        ogni reinstall, ma resta non raggiungibile direttamente da Windows fuori
-        dalla VNet (serve sempre il tunnel SSH + port-forward via VM).
-
-    STEP 2 — SSH tunnel dal PC Windows (PowerShell o cmd):
+    FALLBACK STEP 2 — SSH tunnel dal PC Windows (PowerShell o cmd):
 
         ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" ^
             -L 8443:localhost:8443 azureuser@10.207.201.136
 
         Identico alla modalita' A. Lasciare la sessione SSH aperta.
 
-    STEP 3 — Port-forward sulla VM (nella sessione SSH):
+    FALLBACK STEP 3 — Port-forward sulla VM (nella sessione SSH):
 
         kubectl port-forward -n traefik svc/traefik 8443:443
 
         Spiegazione:
-            A differenza della modalita' A, puntiamo al Service traefik nel
-            namespace traefik (porta 443). Traefik riceve la connessione TLS,
-            legge il SNI (rancher.app.iac-svil.almaviva.it) dalla Client Hello,
-            recupera il certificato AlmavivA dal Secret e lo presenta al browser.
-            Poi instrada la richiesta al pod Rancher tramite le regole Ingress.
+            Puntiamo al Service traefik nel namespace traefik (porta 443).
+            Traefik riceve la connessione TLS, legge il SNI
+            (rancher.app.iac-svil.almaviva.it) dalla Client Hello, recupera
+            il certificato AlmavivA dal Secret e lo presenta al browser. Poi
+            instrada al pod Rancher tramite le regole Ingress.
 
-    STEP 4 — Apri il browser su Windows:
+    FALLBACK STEP 4 — Apri il browser su Windows:
 
         https://rancher.app.iac-svil.almaviva.it:8443
 
-        Nota: il browser mostrera' il lucchetto verde (certificato valido).
-        - Emesso a:  *.app.iac-svil.almaviva.it  (AlmavivA FMO)
-        - Emesso da: AlmavivA Sub01
-        - Validita': 31/07/2025 - 31/07/2027
+        Ricordati di RIMUOVERE la riga dal file hosts una volta finito,
+        altrimenti l'accesso diretto smettera' di funzionare quando torni
+        sulla rete aziendale.
         NON usare https://localhost:8443 perche' Traefik non avrebbe un SNI
         valido e servirebbe un certificato di default (non quello AlmavivA).
 
@@ -201,7 +240,156 @@ Questo vale per ENTRAMBE le modalita' di deploy.
     ---------------------  --------------------------------  ---------------------------
     Tag playbook           --tags rancher_self_signed        --tags rancher_ca_valid
     Cert nel browser       Self-signed (avviso)              AlmavivA wildcard (verde)
-    Port-forward target    svc/rancher -n cattle-system      svc/traefik -n traefik
-    URL browser            https://localhost:8443/login      https://rancher.app.iac-svil.almaviva.it:8443
-    File hosts Windows     Non necessario                    127.0.0.1 rancher.app.iac-svil.almaviva.it
+    SSH tunnel             Richiesto (8443 -> VM:8443)       Non richiesto
+    kubectl port-forward   svc/rancher -n cattle-system      Non richiesto
+    URL browser            https://localhost:8443/login      https://rancher.app.iac-svil.almaviva.it
+    File hosts Windows     Non necessario                    Non necessario (DNS aziendale risolve)
+    IP target              127.0.0.1 (via tunnel)            10.207.201.138 (Internal LB)
     Ingress Controller     Nessuno (Rancher diretto)         Traefik (TLS termination)
+
+
+--------------------------------------------------------------------------------
+10) ACCESSO ALLA DASHBOARD ANSIBLE DA WINDOWS
+--------------------------------------------------------------------------------
+
+La dashboard e' un'app Flask (Python) che gira sulla VM e fornisce una GUI web
+per lanciare i playbook (install / uninstall, self-signed / CA valida) senza
+dover usare la CLI.
+
+    Path codice sulla VM: /home/azureuser/iac-ansible-auzre/ansible-aks/dashboard
+    Listener:             127.0.0.1:8080 (solo loopback, non esposta sulla rete)
+
+A differenza di Rancher, la dashboard NON e' dietro Traefik/DNS, quindi
+l'accesso da Windows avviene SEMPRE tramite SSH tunnel.
+
+
+=== A) AVVIO DASHBOARD COME DEMONE SYSTEMD (sulla VM) ===
+
+    Il demone fa partire la dashboard automaticamente al boot della VM e la
+    riavvia in caso di crash, senza dover lasciare aperta una sessione SSH
+    con ./start.sh in foreground.
+
+    File da creare: /etc/systemd/system/aks-dashboard.service
+
+        [Unit]
+        Description=AKS Rancher Ansible Dashboard (Flask)
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        User=azureuser
+        Group=azureuser
+        WorkingDirectory=/home/azureuser/iac-ansible-auzre/ansible-aks/dashboard
+
+        Environment=VIRTUAL_ENV=/home/azureuser/ansible-env
+        Environment=PATH=/home/azureuser/ansible-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        Environment=PYTHONUNBUFFERED=1
+
+        ExecStart=/home/azureuser/ansible-env/bin/python /home/azureuser/iac-ansible-auzre/ansible-aks/dashboard/app.py
+
+        Restart=on-failure
+        RestartSec=5s
+
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=aks-dashboard
+
+        [Install]
+        WantedBy=multi-user.target
+
+    Setup una tantum:
+
+        # Flask deve essere installato nel venv (start.sh lo fa ad ogni avvio,
+        # il demone no per evitare dipendenze di rete al boot)
+        ~/ansible-env/bin/pip install flask --quiet
+
+        # Creazione unit + abilitazione al boot + avvio immediato
+        sudo systemctl daemon-reload
+        sudo systemctl enable aks-dashboard.service
+        sudo systemctl start  aks-dashboard.service
+
+        # Verifica
+        sudo systemctl status aks-dashboard.service
+        ss -tlnp | grep 8080
+        curl -sI http://127.0.0.1:8080/ | head -1
+
+    Comandi quotidiani:
+
+        sudo systemctl restart aks-dashboard       # dopo git pull / modifiche al codice
+        sudo systemctl stop    aks-dashboard
+        sudo systemctl start   aks-dashboard
+
+        journalctl -u aks-dashboard -f             # log live (Ctrl+C per uscire)
+        journalctl -u aks-dashboard -n 200         # ultimi 200 log
+
+    Note operative:
+        - User=azureuser: il demone gira con lo stesso utente di prima e accede
+          a ~/ansible-env, ai playbook e al kubeconfig allo stesso modo.
+        - Restart=on-failure: se Python crasha, restart automatico dopo 5 sec.
+          Se fermi tu con "systemctl stop", resta fermo (no loop).
+        - Niente "pip install" ad ogni avvio (come fa start.sh): il demone si
+          aspetta che flask sia gia' nel venv (setup una tantum sopra).
+        - Niente sessione SSH da tenere aperta: la dashboard gira anche a
+          terminale chiuso, sopravvive al logout, riparte da sola al reboot.
+
+
+=== B) ACCESSO ALLA DASHBOARD DAL PC WINDOWS ===
+
+    Architettura:
+
+        [PC Windows]
+            | SSH tunnel (porta cifrata via PEM)
+        [VM Linux azureuser@10.207.201.136:8080]
+            | (loopback locale VM)
+        [Flask dashboard, gestita da systemd]
+
+    Perche' il tunnel SSH e non l'accesso diretto come per Rancher?
+        La dashboard non e' esposta tramite Ingress/Traefik e non ha un record
+        DNS aziendale. Ascolta solo su 127.0.0.1:8080 della VM, di proposito:
+        e' un launcher di playbook ed esporla sulla rete sarebbe un rischio.
+        L'unico modo di raggiungerla da Windows e' un tunnel SSH cifrato che
+        inoltra la 8080 di Windows alla 8080 della VM.
+
+    STEP 1 — SSH tunnel dal PC Windows (PowerShell o cmd):
+
+        ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" ^
+            -L 8080:localhost:8080 azureuser@10.207.201.136
+
+        Spiegazione flag:
+            -i <key>            chiave PEM della VM Azure
+            -L 8080:localhost:8080
+                                porta 8080 di Windows -> 127.0.0.1:8080 della VM
+                                (loopback della VM dove ascolta Flask)
+            azureuser@...       utente e IP privato della VM
+
+        Lasciare la sessione SSH aperta finche' usi la dashboard.
+
+    STEP 2 — Apri il browser su Windows:
+
+        http://localhost:8080/#/dashboard
+
+        Nota: HTTP, non HTTPS. Il dev server di Flask non fa TLS; la cifratura
+        del trasporto Windows<->VM e' gia' garantita da SSH.
+
+    Suggerimento — saltare il "ssh -i ..." lungo ogni volta:
+        Crea ~/.ssh/config su Windows (OpenSSH built-in di Win10/11) con:
+
+            Host aks-vm
+                HostName 10.207.201.136
+                User azureuser
+                IdentityFile "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem"
+                LocalForward 8080 localhost:8080
+                ServerAliveInterval 60
+
+        Poi basta:
+            ssh aks-vm
+
+
+=== RIEPILOGO ACCESSI DA WINDOWS ===
+
+    Risorsa     URL da Windows                              Serve SSH tunnel?
+    ---------   -----------------------------------------   --------------------
+    Rancher A   https://localhost:8443/login                Si' (8443) + port-fwd
+    Rancher B   https://rancher.app.iac-svil.almaviva.it    No (DNS + Internal LB)
+    Dashboard   http://localhost:8080/#/dashboard           Si' (8080)
