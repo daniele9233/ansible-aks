@@ -155,9 +155,6 @@ Esistono due percorsi di accesso, in base alla modalita' di deploy scelta:
         nslookup rancher.app.iac-svil.almaviva.it
         -> deve rispondere 10.207.201.138
 
-        Se il DNS non risolve o l'IP non e' raggiungibile, vedi sezione
-        FALLBACK piu' sotto.
-
     STEP UNICO — Apri il browser su Windows:
 
         https://rancher.app.iac-svil.almaviva.it
@@ -177,53 +174,12 @@ Esistono due percorsi di accesso, in base alla modalita' di deploy scelta:
         a localhost (dove non c'e' nulla in ascolto se non hai un tunnel
         attivo) invece che al LoadBalancer reale.
 
-    Perche' funziona ora senza tunnel (storico):
+    Storico (perche' funziona ora senza tunnel):
         In precedenza il DNS aziendale non risolveva l'FQDN e/o l'Internal LB
         non era raggiungibile dalla rete aziendale: servivano hosts file +
         SSH tunnel + kubectl port-forward su svc/traefik. Ora il DNS aziendale
         risponde 10.207.201.138 e la rotta verso quell'IP e' presente nella
         VNet/ExpressRoute, quindi il browser si connette nativamente a Traefik.
-
-
-    --- FALLBACK (solo se DNS aziendale non risolve o rotta verso
-        10.207.201.138 non attiva, p.es. da una rete fuori VPN) ---
-
-    Metodo storico, ancora valido come backup:
-
-    FALLBACK STEP 1 — Modifica il file hosts di Windows (come Amministratore):
-
-        File: C:\Windows\System32\drivers\etc\hosts
-
-        Aggiungi (temporaneamente):
-            127.0.0.1   rancher.app.iac-svil.almaviva.it
-
-    FALLBACK STEP 2 — SSH tunnel dal PC Windows (PowerShell o cmd):
-
-        ssh -i "C:\Users\D.Pascolini\Desktop\IAC-Azure\ALMDEPIAC01LTAZ_key 1.pem" ^
-            -L 8443:localhost:8443 azureuser@10.207.201.136
-
-        Identico alla modalita' A. Lasciare la sessione SSH aperta.
-
-    FALLBACK STEP 3 — Port-forward sulla VM (nella sessione SSH):
-
-        kubectl port-forward -n traefik svc/traefik 8443:443
-
-        Spiegazione:
-            Puntiamo al Service traefik nel namespace traefik (porta 443).
-            Traefik riceve la connessione TLS, legge il SNI
-            (rancher.app.iac-svil.almaviva.it) dalla Client Hello, recupera
-            il certificato AlmavivA dal Secret e lo presenta al browser. Poi
-            instrada al pod Rancher tramite le regole Ingress.
-
-    FALLBACK STEP 4 — Apri il browser su Windows:
-
-        https://rancher.app.iac-svil.almaviva.it:8443
-
-        Ricordati di RIMUOVERE la riga dal file hosts una volta finito,
-        altrimenti l'accesso diretto smettera' di funzionare quando torni
-        sulla rete aziendale.
-        NON usare https://localhost:8443 perche' Traefik non avrebbe un SNI
-        valido e servirebbe un certificato di default (non quello AlmavivA).
 
 
 === RECOVERY BOOTSTRAP PASSWORD ===
