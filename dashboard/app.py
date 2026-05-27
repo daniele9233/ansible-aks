@@ -5,6 +5,7 @@ import tempfile
 import shlex
 import shutil
 import json
+import time
 import re
 import os
 
@@ -218,9 +219,76 @@ def api_disks_list():
     return jsonify({'items': items, 'count': len(items)})
 
 
+def _kubectl(kubectl, env, args, timeout=15):
+    """Esegue 'kubectl <args>' e ritorna (returncode, output_combinato_stripped)."""
+    try:
+        r = subprocess.run(
+            [kubectl] + args,
+            capture_output=True, text=True, env=env, cwd=ANSIBLE_DIR, timeout=timeout,
+        )
+        return r.returncode, ((r.stdout or '') + (r.stderr or '')).strip()
+    except subprocess.TimeoutExpired:
+        return -1, f'(kubectl timeout >{timeout}s)'
+    except Exception as exc:
+        return -2, str(exc)
+
+
+def _delete_pv_robust(kubectl, env, name):
+    """Cancella un PV in modo idempotente, forzando la rimozione dei finalizer
+    se il PV resta stuck in Terminating. Casi tipici di stuck su Azure Disk:
+      - kubernetes.io/pv-protection: PVC ancora presente
+      - external-attacher/disk.csi.azure.com: volume ancora attached al nodo
+      - external-provisioner/disk.csi.azure.com: AKS non riesce a deprovisionare
+    Strategia: delete --wait=false -> poll 8s -> patch finalizers null -> poll 10s.
+    """
+    log_lines = []
+
+    def pv_exists():
+        c, o = _kubectl(kubectl, env,
+                        ['get', 'pv', name, '--ignore-not-found',
+                         '-o', 'jsonpath={.metadata.name}'])
+        return c == 0 and o != ''
+
+    # 1) Delete non-bloccante (l'API server accetta la richiesta e ritorna subito).
+    code, out = _kubectl(kubectl, env,
+                         ['delete', 'pv', name, '--ignore-not-found', '--wait=false'])
+    if out:
+        log_lines.append(out)
+    if code != 0 and 'not found' not in out.lower():
+        return {'name': name, 'ok': False, 'output': '\n'.join(log_lines)}
+
+    # 2) Polling: aspetta fino a 8s che il PV sparisca da solo.
+    for _ in range(4):
+        time.sleep(2)
+        if not pv_exists():
+            return {'name': name, 'ok': True,
+                    'output': '\n'.join(log_lines) or 'PV cancellato'}
+
+    # 3) Ancora presente -> rimozione forzata dei finalizer (stesso pattern
+    #    di uninstall-rancher.sh per i namespace stuck in Terminating).
+    log_lines.append('PV stuck in Terminating, forzo rimozione finalizer')
+    code, out = _kubectl(kubectl, env,
+                         ['patch', 'pv', name, '--type=merge',
+                          '-p', '{"metadata":{"finalizers":null}}'])
+    if out:
+        log_lines.append(out)
+
+    # 4) Verifica finale (fino a 10s).
+    for _ in range(5):
+        time.sleep(2)
+        if not pv_exists():
+            return {'name': name, 'ok': True, 'output': '\n'.join(log_lines)}
+
+    log_lines.append('PV ancora presente dopo rimozione finalizer (anomalo: '
+                     'verifica con: kubectl get pv ' + name + ' -o yaml)')
+    return {'name': name, 'ok': False, 'output': '\n'.join(log_lines)}
+
+
 @app.route('/api/disks/delete', methods=['POST'])
 def api_disks_delete():
-    """Cancella i PersistentVolume selezionati (uno alla volta, riporta esito per nome)."""
+    """Cancella i PersistentVolume selezionati (uno alla volta, riporta esito per nome).
+    Usa _delete_pv_robust che gestisce i finalizer stuck (caso comune sui PV CSI
+    Azure quando il PVC esiste ancora o il volume e' attached a un nodo)."""
     payload = request.get_json(force=True, silent=True) or {}
     names = payload.get('names')
     if not isinstance(names, list) or not names:
@@ -232,22 +300,7 @@ def api_disks_delete():
 
     kubectl = shutil.which('kubectl') or 'kubectl'
     env = _kubectl_env()
-    results = []
-    for name in names:
-        try:
-            r = subprocess.run(
-                [kubectl, 'delete', 'pv', name, '--ignore-not-found', '--timeout=30s'],
-                capture_output=True, text=True, env=env, cwd=ANSIBLE_DIR, timeout=60,
-            )
-            results.append({
-                'name': name,
-                'ok': r.returncode == 0,
-                'output': ((r.stdout or '') + (r.stderr or '')).strip()[:400],
-            })
-        except subprocess.TimeoutExpired:
-            results.append({'name': name, 'ok': False, 'output': 'kubectl timeout (>60s)'})
-        except Exception as exc:
-            results.append({'name': name, 'ok': False, 'output': str(exc)})
+    results = [_delete_pv_robust(kubectl, env, name) for name in names]
     return jsonify({'results': results})
 
 
