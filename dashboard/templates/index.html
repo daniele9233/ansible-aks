@@ -307,7 +307,6 @@
           <i data-lucide="chevron-right" class="caret w-3 h-3 text-fg-dim transition-transform"></i>
         </summary>
         <ul class="mt-1 space-y-px">
-          <li><a href="#/tunnel" class="nav-item relative flex items-center gap-3 px-3 py-2 rounded-md text-[13px] text-fg-mute" data-route="tunnel"><i data-lucide="terminal-square" class="w-4 h-4"></i>Windows Tunnel</a></li>
           <li><a href="#/ssh"    class="nav-item relative flex items-center gap-3 px-3 py-2 rounded-md text-[13px] text-fg-mute" data-route="ssh"><i data-lucide="key-round" class="w-4 h-4"></i>SSH Commands</a></li>
         </ul>
       </details>
@@ -793,41 +792,9 @@
       </section>
 
       <!-- ============================================================== -->
-      <!-- WINDOWS TUNNEL                                                   -->
-      <!-- ============================================================== -->
-      <section data-screen-label="07 Tunnel" data-screen="tunnel" class="p-8 max-w-[1100px] hidden rise">
-        <h1 class="text-[26px] font-semibold leading-tight">Windows Tunnel</h1>
-        <p class="text-fg-mute mt-1 mb-6 text-[14px]">Self-Signed: tunnel SSH + kubectl port-forward dalla workstation Windows. CA Valid: accesso diretto via DNS, nessun tunnel.</p>
-
-        <div class="card p-6">
-          <div class="seg mb-5" role="tablist">
-            <button class="on" data-tunnel-tab="self">Self-Signed</button>
-            <button data-tunnel-tab="ca">CA Valid</button>
-          </div>
-
-          <label class="text-[12px] font-medium text-fg-mute">Path to .pem key (Windows)</label>
-          <input id="pem-path" class="field font-mono mt-2 max-w-[680px]" placeholder="C:\Users\D.Pascolini\Desktop\aks-jump.pem (opzionale)" />
-
-          <div class="mt-6 space-y-3" id="tunnel-cmds">
-            <!-- injected by JS -->
-          </div>
-
-          <div id="tunnel-callout" class="hidden mt-6 p-4 rounded-md border" style="background:rgba(110,231,183,0.06); border-color:rgba(110,231,183,0.30)">
-            <div class="flex gap-3">
-              <i data-lucide="check-circle-2" class="w-4 h-4 shrink-0 mt-0.5" style="color:#6ee7b7"></i>
-              <div class="text-[12.5px]">
-                <div class="font-medium" style="color:#bbf7d0">CA Valid · accesso diretto, nessun tunnel</div>
-                <p class="text-fg-mute mt-1">Il DNS aziendale risolve <span class="font-mono text-fg">rancher.app.iac-svil.almaviva.it</span> sull'Internal LoadBalancer di Traefik (<span class="font-mono text-fg">10.207.201.138</span>), raggiungibile dalla rete aziendale via VNet/ExpressRoute. Apri direttamente il browser, senza tunnel ne' port-forward. Se in passato avevi aggiunto <span class="font-mono">127.0.0.1 rancher.app.iac-svil.almaviva.it</span> al file hosts di Windows, RIMUOVILA.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================================== -->
       <!-- SSH COMMANDS                                                     -->
       <!-- ============================================================== -->
-      <section data-screen-label="08 SSH" data-screen="ssh" class="p-8 max-w-[1100px] hidden rise">
+      <section data-screen-label="07 SSH" data-screen="ssh" class="p-8 max-w-[1100px] hidden rise">
         <h1 class="text-[26px] font-semibold leading-tight">SSH Commands</h1>
         <p class="text-fg-mute mt-1 mb-6 text-[14px]">Tre flussi di accesso: Rancher (CA Valid / Self-Signed) e Dashboard Ansible. Esegui i comandi nell'ordine indicato.</p>
 
@@ -935,7 +902,7 @@
       <!-- ============================================================== -->
       <!-- HOW-TO                                                           -->
       <!-- ============================================================== -->
-      <section data-screen-label="09 How-To" data-screen="howto" class="p-8 max-w-[960px] hidden rise">
+      <section data-screen-label="08 How-To" data-screen="howto" class="p-8 max-w-[960px] hidden rise">
         <div class="flex items-start justify-between mb-6 gap-4">
           <div>
             <h1 class="text-[26px] font-semibold leading-tight">HOW-TO</h1>
@@ -1099,7 +1066,6 @@ const ROUTE_TITLES = {
   dryrun:    'Dry-Run',
   deploy:    'Deploy',
   uninstall: 'Uninstall',
-  tunnel:    'Windows Tunnel',
   ssh:       'SSH Commands',
   howto:     'HOW-TO',
 };
@@ -1110,7 +1076,6 @@ const ROUTE_PARENT = {
   dryrun:    'Operations',
   deploy:    'Operations',
   uninstall: 'Operations',
-  tunnel:    'Access',
   ssh:       'Access',
   howto:     'Documentation',
 };
@@ -1700,44 +1665,6 @@ function flashCopy(btn) {
 }
 
 /* ============================================================
-   TUNNEL TABS
-   ============================================================ */
-function renderTunnel(mode) {
-  const pem = $('#pem-path').value;
-  const sshBase = pem ? `ssh -i "${pem}" -L 8443:localhost:8443 azureuser@10.207.201.136`
-                       : `ssh -L 8443:localhost:8443 azureuser@10.207.201.136`;
-  const cmds = mode === 'self' ? [
-    { title:'1. Apri SSH tunnel (lascia aperto)', cmd: sshBase },
-    { title:'2. kubectl port-forward — Self-Signed (Rancher → 8443)', cmd:`kubectl port-forward -n cattle-system svc/rancher 8443:443` },
-    { title:'3. Apri il browser', cmd:`https://localhost:8443/login` },
-  ] : [
-    { title:'Apri il browser su Windows (nessun tunnel ne\' port-forward)', cmd:`https://rancher.app.iac-svil.almaviva.it/dashboard/home` },
-  ];
-
-  $('#tunnel-cmds').innerHTML = cmds.map(c => `
-    <div>
-      <div class="text-[11px] text-fg-mute mb-1.5">${c.title}</div>
-      <div class="code"><span class="font-mono break-all">${escapeHTML(c.cmd)}</span>
-        <button class="icon-btn !w-7 !h-7" data-copy="${escapeHTML(c.cmd)}"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
-      </div>
-    </div>`).join('');
-  $('#tunnel-callout').classList.toggle('hidden', mode !== 'ca');
-  lucide.createIcons({ icons: lucide.icons, attrs:{} });
-}
-document.addEventListener('click', (e) => {
-  const t = e.target.closest('[data-tunnel-tab]');
-  if (!t) return;
-  $$('[data-tunnel-tab]').forEach(b => b.classList.toggle('on', b === t));
-  renderTunnel(t.dataset.tunnelTab);
-});
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'pem-path') {
-    const on = document.querySelector('[data-tunnel-tab].on');
-    renderTunnel(on ? on.dataset.tunnelTab : 'self');
-  }
-});
-
-/* ============================================================
    UNINSTALL MODAL
    ============================================================ */
 const modal = $('#uninstall-modal');
@@ -2240,7 +2167,6 @@ document.addEventListener('mouseup', () => {
 loadJobs();
 lucide.createIcons({ icons: lucide.icons, attrs:{} });
 route();
-renderTunnel('self');
 renderJobs();
 setRunningStatus('idle');
 </script>
