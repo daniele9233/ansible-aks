@@ -524,7 +524,7 @@
                 <input type="password" class="field !pr-10 vault-pw" placeholder="Enter vault password" data-pw-for="vault" />
                 <button class="absolute right-2 top-1/2 -translate-y-1/2 icon-btn !w-7 !h-7" data-toggle-pw><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
               </div>
-              <p class="text-[11px] text-fg-dim mt-2">Required to decrypt vault.yml, vault_cavalid.yml, vault_storage.yml and vault_pgadmin.yml.</p>
+              <p class="text-[11px] text-fg-dim mt-2">Required to decrypt vault.yml, vault_cavalid.yml, vault_storage.yml, vault_pgadmin.yml and vault_grafana.yml.</p>
             </div>
 
             <div class="grid grid-cols-2 gap-4 max-w-[640px]">
@@ -571,6 +571,17 @@
                 </div>
                 <p class="text-[12px] text-fg-mute mb-4">pgAdmin admin email and password for the web GUI (PostgreSQL external manager).</p>
                 <button class="btn btn-primary w-full justify-center" data-action="vault_pgadmin" data-vault><i data-lucide="eye" class="w-4 h-4"></i>View vault_pgadmin.yml</button>
+              </div>
+              <div class="card card-hover p-5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-9 h-9 rounded-md bg-ink-500 border border-rule flex items-center justify-center"><i data-lucide="bar-chart-3" class="w-4 h-4" style="color:#f3bb5a"></i></div>
+                  <div>
+                    <div class="font-medium text-[14px]">vault_grafana.yml</div>
+                    <div class="text-[11px] text-fg-mute font-mono">group_vars/all/vault_grafana.yml</div>
+                  </div>
+                </div>
+                <p class="text-[12px] text-fg-mute mb-4">Grafana admin user and password for the observability dashboard.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="vault_grafana" data-vault><i data-lucide="eye" class="w-4 h-4"></i>View vault_grafana.yml</button>
               </div>
             </div>
             <button class="btn btn-ghost btn-sm mt-5" data-open-files="vault"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View source files</button>
@@ -647,6 +658,14 @@
                 <p class="text-[12px] text-fg-mute mb-4">Simulate pgAdmin install with a dedicated PVC (managed-csi, 4Gi) and Traefik Ingress.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="dryrun_pgadmin" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run</button>
               </div>
+              <div class="card card-hover p-5">
+                <div class="flex items-center gap-3 mb-2">
+                  <span class="badge badge-info"><span class="dot"></span>tag: grafana</span>
+                </div>
+                <div class="font-medium text-[14px] mb-1">Grafana 11 (monitoring)</div>
+                <p class="text-[12px] text-fg-mute mb-4">Simulate Grafana install with a dedicated PVC (managed-csi, 5Gi) and Traefik Ingress. Shares the <span class="font-mono">monitoring</span> namespace with pgAdmin.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="dryrun_grafana" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run</button>
+              </div>
             </div>
 
             <div class="mt-6 p-4 border border-rule rounded-md bg-ink-700 max-w-[640px]">
@@ -721,6 +740,11 @@
                 <p class="text-[12px] text-fg-mute mb-4">Install pgAdmin in namespace <span class="font-mono">monitoring</span>. Dedicated PVC (managed-csi, 4Gi) and Traefik Ingress.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="deploy_pgadmin" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy pgAdmin 4</button>
               </div>
+              <div class="card card-hover p-5">
+                <div class="font-medium text-[14px] mb-1">Deploy · Grafana 11</div>
+                <p class="text-[12px] text-fg-mute mb-4">Install Grafana in namespace <span class="font-mono">monitoring</span>. Dedicated PVC (managed-csi, 5Gi) and Traefik Ingress. Co-tenant of pgAdmin.</p>
+                <button class="btn btn-primary w-full justify-center" data-action="deploy_grafana" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Grafana 11</button>
+              </div>
             </div>
             <button class="btn btn-ghost btn-sm mt-5" data-open-files="deploy"><i data-lucide="file-code-2" class="w-3.5 h-3.5"></i>View playbook files</button>
           </div>
@@ -762,6 +786,23 @@
                   <p class="text-[12.5px] text-fg-mute mt-1">Removes pgAdmin (Deployment, Service, Ingress, Secrets, PVC <span class="font-mono">pvc-pgadmin</span>) from namespace <span class="font-mono">monitoring</span>. The namespace itself is deleted only if empty. The underlying Azure Disk (managed-csi, reclaim Delete) is automatically removed by AKS. No vault password required.</p>
                   <div class="mt-5 flex gap-2">
                     <button class="btn btn-danger" id="btn-open-uninstall-pgadmin"><i data-lucide="trash-2" class="w-4 h-4"></i>Run uninstall pgAdmin</button>
+                    <a href="#/dashboard" class="btn btn-ghost"><i data-lucide="x" class="w-4 h-4"></i>Cancel</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============== UNINSTALL Grafana ============== -->
+            <div class="card p-6 max-w-[640px] mt-4" style="border-color: rgba(226,85,85,.35)">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style="background:rgba(226,85,85,.10); border:1px solid rgba(226,85,85,.30)">
+                  <i data-lucide="bar-chart-3" class="w-5 h-5 text-bad"></i>
+                </div>
+                <div class="min-w-0">
+                  <div class="font-medium">This will run <span class="font-mono text-fg">bash uninstall-grafana.sh</span></div>
+                  <p class="text-[12.5px] text-fg-mute mt-1">Removes Grafana (Deployment, Service, Ingress, Secrets, PVC <span class="font-mono">pvc-grafana</span>) from namespace <span class="font-mono">monitoring</span>. The namespace is preserved if pgAdmin or other workloads are still present. The underlying Azure Disk (managed-csi, reclaim Delete) is automatically removed by AKS. No vault password required.</p>
+                  <div class="mt-5 flex gap-2">
+                    <button class="btn btn-danger" id="btn-open-uninstall-grafana"><i data-lucide="trash-2" class="w-4 h-4"></i>Run uninstall Grafana</button>
                     <a href="#/dashboard" class="btn btn-ghost"><i data-lucide="x" class="w-4 h-4"></i>Cancel</a>
                   </div>
                 </div>
@@ -1026,18 +1067,22 @@ const ACTION_LABEL = {
   vault_cavalid:          { name:'View vault_cavalid.yml',  type:'Vault' },
   vault_storage:          { name:'View vault_storage.yml',  type:'Vault' },
   vault_pgadmin:          { name:'View vault_pgadmin.yml',  type:'Vault' },
+  vault_grafana:          { name:'View vault_grafana.yml',  type:'Vault' },
   dryrun_all:             { name:'Dry-Run Full stack',      type:'Dry-Run' },
   dryrun_ca_valid:        { name:'Dry-Run CA-Valid',        type:'Dry-Run' },
   dryrun_self:            { name:'Dry-Run Self-Signed',     type:'Dry-Run' },
   dryrun_aks_static_pv:   { name:'Dry-Run Static PV',       type:'Dry-Run' },
   dryrun_pgadmin:         { name:'Dry-Run pgAdmin 4',       type:'Dry-Run' },
+  dryrun_grafana:         { name:'Dry-Run Grafana 11',      type:'Dry-Run' },
   deploy_all:             { name:'Deploy Full stack',       type:'Deploy' },
   deploy_ca_valid:        { name:'Deploy CA-Valid',         type:'Deploy' },
   deploy_self:            { name:'Deploy Self-Signed',      type:'Deploy' },
   deploy_aks_static_pv:   { name:'Deploy Static PV',        type:'Deploy' },
   deploy_pgadmin:         { name:'Deploy pgAdmin 4',        type:'Deploy' },
+  deploy_grafana:         { name:'Deploy Grafana 11',       type:'Deploy' },
   uninstall:              { name:'Uninstall Rancher',       type:'Uninstall' },
   uninstall_pgadmin:      { name:'Uninstall pgAdmin',       type:'Uninstall' },
+  uninstall_grafana:      { name:'Uninstall Grafana',       type:'Uninstall' },
   delete_disks:           { name:'Delete PVs',               type:'Uninstall' },
 };
 
@@ -1542,6 +1587,7 @@ function mockSequenceFor(action) {
       vault_cavalid: 'vault_cavalid.yml',
       vault_storage: 'vault_storage.yml',
       vault_pgadmin: 'vault_pgadmin.yml',
+      vault_grafana: 'vault_grafana.yml',
     })[action] || 'vault.yml';
     return [
       '\x1b[2mDecrypting vault…\x1b[0m',
@@ -1580,6 +1626,7 @@ function mockSequenceFor(action) {
     if (action.includes('ca_valid'))           tag = 'rancher_ca_valid';
     else if (action.includes('aks_static_pv')) tag = 'aks_static_pv';
     else if (action.includes('pgadmin'))       tag = 'pgadmin';
+    else if (action.includes('grafana'))       tag = 'grafana';
     cmd = `ansible-playbook ${mode}--tags ${tag} site.yml`;
   }
   return [
@@ -1736,6 +1783,24 @@ $('#btn-open-uninstall-pgadmin')?.addEventListener('click', () => {
       state.lastSeenLines = 0;
       pushTerminalLines([`\x1b[1;31m$ Uninstall pgAdmin — ${new Date().toLocaleTimeString()}\x1b[0m`]);
       await callRun('uninstall_pgadmin', '');
+    },
+  });
+});
+
+/* ============================================================
+   UNINSTALL Grafana
+   ============================================================ */
+$('#btn-open-uninstall-grafana')?.addEventListener('click', () => {
+  openConfirm({
+    title: 'Confirm Grafana Uninstall',
+    bodyHtml: 'This will run <span class="font-mono text-fg">bash uninstall-grafana.sh</span> against the live cluster, removing Grafana and PVC <span class="font-mono text-fg">pvc-grafana</span> from namespace <span class="font-mono text-fg">monitoring</span>. The Azure Disk (managed-csi) is auto-cleaned. The namespace stays if pgAdmin is still there. This action cannot be undone.',
+    expected: 'UNINSTALL',
+    confirmLabel: 'Confirm uninstall Grafana',
+    onConfirm: async () => {
+      pushJob('uninstall_grafana');
+      state.lastSeenLines = 0;
+      pushTerminalLines([`\x1b[1;31m$ Uninstall Grafana — ${new Date().toLocaleTimeString()}\x1b[0m`]);
+      await callRun('uninstall_grafana', '');
     },
   });
 });
@@ -1930,6 +1995,7 @@ const SCREEN_SOURCE_FILES = {
     { path:'group_vars/all/vault_cavalid.yml', label:'vault_cavalid.yml' },
     { path:'group_vars/all/vault_storage.yml', label:'vault_storage.yml' },
     { path:'group_vars/all/vault_pgadmin.yml', label:'vault_pgadmin.yml' },
+    { path:'group_vars/all/vault_grafana.yml', label:'vault_grafana.yml' },
   ],
   dryrun: [
     { path:'site.yml',                                                              label:'site.yml' },
@@ -1939,6 +2005,7 @@ const SCREEN_SOURCE_FILES = {
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
     { path:'roles/aks_static_pv_install/tasks/main.yml',                            label:'aks_static_pv_install.yml' },
     { path:'roles/pgadmin_install/tasks/main.yml',                                  label:'pgadmin_install.yml' },
+    { path:'roles/grafana_install/tasks/main.yml',                                  label:'grafana_install.yml' },
   ],
   deploy: [
     { path:'site.yml',                                                              label:'site.yml' },
@@ -1948,6 +2015,7 @@ const SCREEN_SOURCE_FILES = {
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
     { path:'roles/aks_static_pv_install/tasks/main.yml',                            label:'aks_static_pv_install.yml' },
     { path:'roles/pgadmin_install/tasks/main.yml',                                  label:'pgadmin_install.yml' },
+    { path:'roles/grafana_install/tasks/main.yml',                                  label:'grafana_install.yml' },
   ],
   uninstall: [
     { path:'uninstall-rancher.sh', label:'uninstall-rancher.sh' },

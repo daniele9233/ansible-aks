@@ -109,3 +109,51 @@ pgadmin_memory_limit:   "512Mi"
 pgadmin_labels:
   app: "pgadmin"
   managed-by: "iac"
+
+# ---------------------------------------------------------------------------
+# Grafana 11 — dashboard di osservabilita'.
+# Esposto via Traefik Ingress su grafana.app.iac-svil.almaviva.it
+# (cert wildcard AlmavivA, stesso usato per Rancher CA Valid e pgAdmin).
+#
+# Storage: PVC dedicata (managed-csi, provisioning dinamico AKS).
+# Convive nel namespace 'monitoring' con pgAdmin (PVC separate, dischi
+# Azure separati, nessuna interazione).
+#
+# Credenziali admin nel vault dedicato:
+#   group_vars/all/vault_grafana.yml
+#     vault_grafana_admin_user
+#     vault_grafana_admin_password
+# Il vault va cifrato (ansible-vault encrypt) con la stessa password degli altri.
+# ---------------------------------------------------------------------------
+grafana_namespace: "monitoring"
+grafana_hostname: "grafana.app.iac-svil.almaviva.it"
+grafana_image: "grafana/grafana:11.3.0"
+grafana_replicas: 1
+
+# Storage: PVC dedicata da 5Gi (richiesta utente), indipendente da pgAdmin.
+# managed-csi -> AKS provisiona dinamicamente un Azure Disk Premium SSD.
+grafana_pvc_name: "pvc-grafana"
+grafana_pvc_size: "5Gi"
+grafana_pvc_access_mode: "ReadWriteOnce"
+grafana_pvc_storage_class: "managed-csi"
+
+# Ingress + TLS
+grafana_ingress_class: "traefik"
+# Secret TLS pre-creato dal role nel namespace di Grafana, sourced dallo stesso
+# fullchain wildcard di vault_cavalid.yml (vault_rancher_tls_crt_chain/_key).
+grafana_tls_secret_name: "tls-grafana-ingress"
+
+# Secret con user/password admin, sourced dal vault_grafana.yml
+grafana_admin_secret_name: "grafana-admin"
+grafana_admin_user: "{{ vault_grafana_admin_user }}"
+grafana_admin_password: "{{ vault_grafana_admin_password }}"
+
+# Risorse (single replica, traffico basso)
+grafana_cpu_request: "100m"
+grafana_cpu_limit:   "500m"
+grafana_memory_request: "128Mi"
+grafana_memory_limit:   "512Mi"
+
+grafana_labels:
+  app: "grafana"
+  managed-by: "iac"

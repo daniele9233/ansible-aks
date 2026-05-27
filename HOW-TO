@@ -39,13 +39,14 @@ Visualizzare il contenuto dei vault senza salvare in chiaro su disco:
  # Tag mirati (i pre-check girano comunque, sono taggati 'always'):
  ansible-playbook site.yml --tags aks_static_pv --check --diff --ask-vault-pass
  ansible-playbook site.yml --tags pgadmin --check --diff --ask-vault-pass
+ ansible-playbook site.yml --tags grafana --check --diff --ask-vault-pass
  ansible-playbook site.yml --tags traefik --check --diff --ask-vault-pass
 
 --------------------------------------------------------------------------------
 4) RUN VERO
 --------------------------------------------------------------------------------
 
-Full stack (Traefik + Rancher CA-Valid + Static PV + pgAdmin):
+Full stack (Traefik + Rancher CA-Valid + Static PV + pgAdmin + Grafana):
     ansible-playbook site.yml --ask-vault-pass
 
 Solo Rancher CA-Valid (con Traefik):
@@ -57,7 +58,15 @@ Solo Rancher Self-Signed (playbook separato):
 Tag mirati (i pre-check girano comunque, sono taggati 'always'):
     ansible-playbook site.yml --tags aks_static_pv --ask-vault-pass
     ansible-playbook site.yml --tags pgadmin --ask-vault-pass
+    ansible-playbook site.yml --tags grafana --ask-vault-pass
     ansible-playbook site.yml --tags traefik --ask-vault-pass
+
+Vault prereq (cifrati con la stessa password):
+    group_vars/all/vault.yml          (segreti generici)
+    group_vars/all/vault_cavalid.yml  (fullchain TLS wildcard AlmavivA)
+    group_vars/all/vault_storage.yml  (Azure Managed Disk identifiers)
+    group_vars/all/vault_pgadmin.yml  (admin email/password pgAdmin)
+    group_vars/all/vault_grafana.yml  (admin user/password Grafana)
 
 
 --------------------------------------------------------------------------------

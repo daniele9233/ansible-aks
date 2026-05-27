@@ -12,12 +12,14 @@
 #   3. Rancher CA-Valid              (tag: rancher_ca_valid)
 #   4. Static PV (Azure Managed Disk)(tag: aks_static_pv)
 #   5. pgAdmin 4                     (tag: pgadmin)
+#   6. Grafana 11                    (tag: grafana)
 #
 # Esecuzione mirata (esempi):
 #   ansible-playbook site.yml --tags traefik          # solo Traefik
 #   ansible-playbook site.yml --tags rancher_ca_valid # Traefik + Rancher
 #   ansible-playbook site.yml --tags aks_static_pv    # solo Static PV
 #   ansible-playbook site.yml --tags pgadmin          # solo pgAdmin
+#   ansible-playbook site.yml --tags grafana          # solo Grafana
 #   (i pre-check girano comunque grazie a tag 'always')
 #
 # Dry-run:
@@ -28,6 +30,7 @@
 #   group_vars/all/vault_cavalid.yml  (fullchain TLS wildcard *.app.iac-svil.almaviva.it)
 #   group_vars/all/vault_storage.yml  (Azure Managed Disk identifiers)
 #   group_vars/all/vault_pgadmin.yml  (admin email/password pgAdmin)
+#   group_vars/all/vault_grafana.yml  (admin user/password Grafana)
 
 - name: Install full stack on AKS (Traefik + Rancher CA-Valid + Static PV + pgAdmin)
   hosts: localhost
@@ -84,3 +87,15 @@
         name: pgadmin_install
       tags:
         - pgadmin
+
+    # -------------------------------------------------------------------------
+    # 5) Grafana 11 (dashboard di osservabilita')
+    #    Richiede Traefik (Ingress) e il wildcard TLS di vault_cavalid.yml.
+    #    La PVC pvc-grafana (5Gi, managed-csi) viene creata dal role stesso.
+    #    Convive con pgAdmin nel namespace 'monitoring' (PVC separate).
+    # -------------------------------------------------------------------------
+    - name: Install Grafana 11 (osservabilita')
+      ansible.builtin.import_role:
+        name: grafana_install
+      tags:
+        - grafana

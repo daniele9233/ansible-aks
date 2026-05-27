@@ -1,0 +1,26 @@
+---
+# Vault credenziali Grafana 11 (consumato dal role grafana_install).
+#
+# Workflow (UNA VOLTA SOLA prima del primo run):
+#   1) Modifica i valori sotto con user e password reali dell'admin Grafana
+#   2) Cifra il file:
+#        ansible-vault encrypt group_vars/all/vault_grafana.yml
+#      (usa la STESSA password vault degli altri file gia' cifrati)
+#   3) Verifica con:
+#        ansible-vault view group_vars/all/vault_grafana.yml --ask-vault-pass
+#   4) Esegui il role:
+#        ansible-playbook site.yml --tags grafana --ask-vault-pass
+#
+# Le variabili sono referenziate in group_vars/all/main.yml:
+#   grafana_admin_user     -> {{ vault_grafana_admin_user }}
+#   grafana_admin_password -> {{ vault_grafana_admin_password }}
+#
+# NB: in Grafana queste finiscono nelle env GF_SECURITY_ADMIN_USER e
+# GF_SECURITY_ADMIN_PASSWORD via Secret + envFrom (vedi role).
+#
+# IMPORTANTE: NON committare questo file in chiaro. Una volta cifrato,
+# la prima riga sara' "$ANSIBLE_VAULT;1.1;AES256" e a quel punto puoi
+# committare senza rischi.
+
+vault_grafana_admin_user: "admin@iac-svil.almaviva.it"
+vault_grafana_admin_password: "REPLACE_ME_BEFORE_ENCRYPTING"

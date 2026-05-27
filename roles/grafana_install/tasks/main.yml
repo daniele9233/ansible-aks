@@ -1,0 +1,328 @@
+---
+# Installa Grafana 11 come dashboard di osservabilita' nel cluster AKS.
+# Esposto via Traefik Ingress su grafana.app.iac-svil.almaviva.it con il cert
+# wildcard AlmavivA *.app.iac-svil.almaviva.it (stesso usato per Rancher
+# CA-Valid e pgAdmin -- riuso dal vault_cavalid.yml).
+#
+# Persistenza: PVC DEDICATA "{{ grafana_pvc_name }}" creata dal role con la
+# StorageClass managed-csi di AKS (provisioning dinamico, un Azure Disk
+# Premium SSD da {{ grafana_pvc_size }}). Nessuna dipendenza dal disco
+# statico pvc-disco-aks-test-iac: ogni app ha il suo disco indipendente.
+#
+# Credenziali admin nel vault dedicato:
+#   group_vars/all/vault_grafana.yml
+#     vault_grafana_admin_user
+#     vault_grafana_admin_password
+#
+# Esecuzione:
+#   ansible-playbook site.yml --tags grafana --ask-vault-pass
+#
+# Prerequisiti:
+#   - Traefik installato (--tags traefik)
+#   - vault_cavalid.yml decifrabile (serve il fullchain TLS wildcard)
+#   - vault_grafana.yml cifrato e compilato
+
+# ---------------------------------------------------------------------------
+# STEP 0 — Namespace dedicato (condiviso con pgAdmin, idempotente)
+# ---------------------------------------------------------------------------
+- name: Ensure namespace "{{ grafana_namespace }}" exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ grafana_namespace }}"
+        labels:
+          managed-by: "iac"
+
+# ---------------------------------------------------------------------------
+# STEP 1 — PVC dedicata (managed-csi, dynamic provisioning)
+# ---------------------------------------------------------------------------
+# La StorageClass managed-csi di AKS usa volumeBindingMode: WaitForFirstConsumer.
+# La PVC resta Pending finche' un pod che la referenzia non viene schedulato:
+# per questo il "wait for Bound" e' spostato DOPO la creazione del Deployment.
+- name: Apply PersistentVolumeClaim "{{ grafana_pvc_name }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ grafana_pvc_name }}"
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+      spec:
+        accessModes:
+          - "{{ grafana_pvc_access_mode }}"
+        storageClassName: "{{ grafana_pvc_storage_class }}"
+        resources:
+          requests:
+            storage: "{{ grafana_pvc_size }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 2 — TLS Secret nel namespace di Grafana (copia del wildcard AlmavivA)
+# ---------------------------------------------------------------------------
+# Gli Ingress sono namespaced: per terminare TLS in "{{ grafana_namespace }}"
+# serve un Secret separato con lo stesso fullchain wildcard di Rancher.
+- name: Create / update TLS secret "{{ grafana_tls_secret_name }}"
+  no_log: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ grafana_tls_secret_name }}"
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ vault_rancher_tls_crt_chain | b64encode }}"
+        tls.key: "{{ vault_rancher_tls_key | b64encode }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 3 — Secret credenziali admin (GF_SECURITY_ADMIN_USER / _PASSWORD)
+# ---------------------------------------------------------------------------
+- name: Create / update Grafana admin Secret "{{ grafana_admin_secret_name }}"
+  no_log: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ grafana_admin_secret_name }}"
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+      type: Opaque
+      stringData:
+        GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
+        GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4 — Deployment Grafana (1 replica, mount diretto sulla PVC dedicata)
+# ---------------------------------------------------------------------------
+- name: Apply Deployment "grafana"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: grafana
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+      spec:
+        replicas: "{{ grafana_replicas }}"
+        # Recreate: il vecchio pod viene terminato prima di crearne uno nuovo.
+        # Obbligatorio con PVC RWO + single replica (no rolling update).
+        strategy:
+          type: Recreate
+        selector:
+          matchLabels:
+            app: grafana
+        template:
+          metadata:
+            labels: "{{ grafana_labels }}"
+          spec:
+            securityContext:
+              # L'immagine ufficiale grafana/grafana gira come uid 472 (grafana).
+              # fsGroup: il volume montato eredita ownership 472 ricorsivamente
+              # (la PVC e' dedicata, niente subPath -> niente fix permissions).
+              runAsUser: 472
+              runAsGroup: 472
+              fsGroup: 472
+            containers:
+              - name: grafana
+                image: "{{ grafana_image }}"
+                imagePullPolicy: IfNotPresent
+                ports:
+                  - name: http
+                    containerPort: 3000
+                envFrom:
+                  - secretRef:
+                      name: "{{ grafana_admin_secret_name }}"
+                env:
+                  # URL pubblico dietro Traefik (HTTPS termination sull'Ingress).
+                  # Necessario per generare link assoluti corretti (reset password,
+                  # share dashboard, ecc.).
+                  - name: GF_SERVER_DOMAIN
+                    value: "{{ grafana_hostname }}"
+                  - name: GF_SERVER_ROOT_URL
+                    value: "https://{{ grafana_hostname }}"
+                  - name: GF_SERVER_SERVE_FROM_SUB_PATH
+                    value: "false"
+                  # Grafana e' dietro un reverse proxy che termina TLS:
+                  # forza cookie secure e header X-Forwarded-* trust.
+                  - name: GF_SECURITY_COOKIE_SECURE
+                    value: "true"
+                  - name: GF_SERVER_ENABLE_GZIP
+                    value: "true"
+                  # Disabilita la telemetria di check version (cluster offline-aware)
+                  - name: GF_ANALYTICS_REPORTING_ENABLED
+                    value: "false"
+                  - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+                    value: "false"
+                volumeMounts:
+                  - name: grafana-data
+                    mountPath: /var/lib/grafana
+                resources:
+                  requests:
+                    cpu: "{{ grafana_cpu_request }}"
+                    memory: "{{ grafana_memory_request }}"
+                  limits:
+                    cpu: "{{ grafana_cpu_limit }}"
+                    memory: "{{ grafana_memory_limit }}"
+                readinessProbe:
+                  httpGet:
+                    path: /api/health
+                    port: http
+                  initialDelaySeconds: 20
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  httpGet:
+                    path: /api/health
+                    port: http
+                  initialDelaySeconds: 60
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            volumes:
+              - name: grafana-data
+                persistentVolumeClaim:
+                  claimName: "{{ grafana_pvc_name }}"
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 4.5 — Attendi che la PVC passi in Bound (sbloccata dal Deployment)
+# ---------------------------------------------------------------------------
+# Con managed-csi (WaitForFirstConsumer) la PVC resta Pending finche' kube
+# scheduler non assegna un pod a un nodo: a quel punto AKS provisiona il
+# disco Azure e fa il bind. Controlliamo qui, dopo il Deployment.
+- name: Wait for PVC "{{ grafana_pvc_name }}" to be Bound
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: PersistentVolumeClaim
+    name: "{{ grafana_pvc_name }}"
+    namespace: "{{ grafana_namespace }}"
+  register: grafana_pvc_status
+  retries: 30
+  delay: 5
+  until:
+    - grafana_pvc_status.resources | length > 0
+    - grafana_pvc_status.resources[0].status.phase | default('') == 'Bound'
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 5 — Service ClusterIP (esposto solo internamente, l'Ingress fa il resto)
+# ---------------------------------------------------------------------------
+- name: Apply Service "grafana"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: grafana
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+      spec:
+        type: ClusterIP
+        selector:
+          app: grafana
+        ports:
+          - name: http
+            port: 80
+            targetPort: http
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 6 — Ingress Traefik con TLS termination (cert wildcard AlmavivA)
+# ---------------------------------------------------------------------------
+- name: Apply Ingress "grafana"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: grafana
+        namespace: "{{ grafana_namespace }}"
+        labels: "{{ grafana_labels }}"
+        annotations:
+          kubernetes.io/ingress.class: "{{ grafana_ingress_class }}"
+          traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+          traefik.ingress.kubernetes.io/router.tls: "true"
+      spec:
+        ingressClassName: "{{ grafana_ingress_class }}"
+        tls:
+          - hosts:
+              - "{{ grafana_hostname }}"
+            secretName: "{{ grafana_tls_secret_name }}"
+        rules:
+          - host: "{{ grafana_hostname }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: grafana
+                      port:
+                        number: 80
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 7 — Attendi il rollout del Deployment
+# ---------------------------------------------------------------------------
+- name: Wait for grafana deployment rollout
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path | expanduser }}"
+    kind: Deployment
+    name: grafana
+    namespace: "{{ grafana_namespace }}"
+  register: grafana_deploy
+  retries: 60
+  delay: 10
+  until:
+    - grafana_deploy.resources | length > 0
+    - grafana_deploy.resources[0].status.readyReplicas | default(0) == grafana_deploy.resources[0].spec.replicas
+  when: not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# STEP 8 — Riepilogo
+# ---------------------------------------------------------------------------
+- name: Grafana installation summary
+  ansible.builtin.debug:
+    msg:
+      - "Grafana installato nel namespace '{{ grafana_namespace }}'"
+      - "URL:        https://{{ grafana_hostname }} (cert wildcard AlmavivA)"
+      - "Image:      {{ grafana_image }}"
+      - "Storage:    PVC '{{ grafana_pvc_name }}' ({{ grafana_pvc_size }}, {{ grafana_pvc_storage_class }})"
+      - "TLS secret: '{{ grafana_tls_secret_name }}' (mirror del wildcard in '{{ grafana_namespace }}')"
+      - "Admin user: nel vault group_vars/all/vault_grafana.yml"
+      - "Replicas:   {{ grafana_deploy.resources[0].status.readyReplicas | default(0) }}/{{ grafana_deploy.resources[0].spec.replicas }}"
+  when: not ansible_check_mode
+
+- name: Grafana dry-run summary
+  ansible.builtin.debug:
+    msg:
+      - "[DRY-RUN] Grafana sarebbe installato in '{{ grafana_namespace }}'"
+      - "Hostname:   https://{{ grafana_hostname }}"
+      - "Image:      {{ grafana_image }}"
+      - "Storage:    PVC '{{ grafana_pvc_name }}' ({{ grafana_pvc_size }}, {{ grafana_pvc_storage_class }})"
+      - "Ingress:    TLS via Secret '{{ grafana_tls_secret_name }}' (creato dal role)"
+  when: ansible_check_mode
