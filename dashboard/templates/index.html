@@ -597,6 +597,24 @@
               </div>
             </div>
 
+            <!-- ============== VIA MAESTRA: DRY-RUN FULL STACK ============== -->
+            <div class="card card-hover p-6 max-w-[640px] mb-4" style="border-color: rgba(63,184,122,.40); background: linear-gradient(135deg, rgba(63,184,122,.05), transparent 65%)">
+              <div class="flex items-start gap-4">
+                <div class="w-11 h-11 rounded-md flex items-center justify-center shrink-0" style="background:rgba(63,184,122,.10); border:1px solid rgba(63,184,122,.30)">
+                  <i data-lucide="layers" class="w-5 h-5" style="color:#7dd9a4"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <div class="font-semibold text-[15px]">Dry-Run · Full stack</div>
+                    <span class="badge badge-ok"><span class="dot"></span>via maestra</span>
+                    <span class="badge badge-info"><span class="dot"></span>tag: rancher_ca_valid,aks_static_pv,pgadmin</span>
+                  </div>
+                  <p class="text-[12.5px] text-fg-mute mt-1">Simulate the full stack install in one shot: Traefik + Rancher CA-Valid + Static PV (Azure Disk) + pgAdmin 4. Single vault prompt, single playbook, order enforced by <span class="font-mono">site.yml</span>.</p>
+                  <button class="btn btn-primary w-full justify-center mt-4" data-action="dryrun_all" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run · Full stack</button>
+                </div>
+              </div>
+            </div>
+
             <div class="grid grid-cols-2 gap-4 max-w-[640px]">
               <div class="card card-hover p-5">
                 <div class="flex items-center gap-3 mb-2">
@@ -663,6 +681,23 @@
               <div class="flex items-center gap-3 text-[12px] text-fg-mute">
                 <i data-lucide="shield-alert" class="w-4 h-4 text-warn"></i>
                 This will install / upgrade Rancher on the production cluster.
+              </div>
+            </div>
+
+            <!-- ============== VIA MAESTRA: DEPLOY FULL STACK ============== -->
+            <div class="card card-hover p-6 max-w-[640px] mb-4" style="border-color: rgba(63,184,122,.40); background: linear-gradient(135deg, rgba(63,184,122,.05), transparent 65%)">
+              <div class="flex items-start gap-4">
+                <div class="w-11 h-11 rounded-md flex items-center justify-center shrink-0" style="background:rgba(63,184,122,.10); border:1px solid rgba(63,184,122,.30)">
+                  <i data-lucide="layers" class="w-5 h-5" style="color:#7dd9a4"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <div class="font-semibold text-[15px]">Deploy · Full stack</div>
+                    <span class="badge badge-ok"><span class="dot"></span>via maestra</span>
+                  </div>
+                  <p class="text-[12.5px] text-fg-mute mt-1">Install the full stack in sequence: Traefik &rarr; Rancher CA-Valid &rarr; Static PV (Azure Disk) &rarr; pgAdmin 4. Single vault prompt, single playbook. Excludes Rancher Self-Signed (mutually exclusive with CA-Valid).</p>
+                  <button class="btn btn-primary w-full justify-center mt-4" data-action="deploy_all" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Full stack</button>
+                </div>
               </div>
             </div>
 
@@ -1024,10 +1059,12 @@ const ACTION_LABEL = {
   vault_cavalid:          { name:'View vault_cavalid.yml',  type:'Vault' },
   vault_storage:          { name:'View vault_storage.yml',  type:'Vault' },
   vault_pgadmin:          { name:'View vault_pgadmin.yml',  type:'Vault' },
+  dryrun_all:             { name:'Dry-Run Full stack',      type:'Dry-Run' },
   dryrun_ca_valid:        { name:'Dry-Run CA-Valid',        type:'Dry-Run' },
   dryrun_self:            { name:'Dry-Run Self-Signed',     type:'Dry-Run' },
   dryrun_aks_static_pv:   { name:'Dry-Run Static PV',       type:'Dry-Run' },
   dryrun_pgadmin:         { name:'Dry-Run pgAdmin 4',       type:'Dry-Run' },
+  deploy_all:             { name:'Deploy Full stack',       type:'Deploy' },
   deploy_ca_valid:        { name:'Deploy CA-Valid',         type:'Deploy' },
   deploy_self:            { name:'Deploy Self-Signed',      type:'Deploy' },
   deploy_aks_static_pv:   { name:'Deploy Static PV',        type:'Deploy' },
@@ -1565,7 +1602,9 @@ function mockSequenceFor(action) {
     ];
   }
   let tag = 'rancher_self_signed';
-  if (action.includes('ca_valid'))            tag = 'rancher_ca_valid';
+  if (action === 'dryrun_all' || action === 'deploy_all')
+                                              tag = 'rancher_ca_valid,aks_static_pv,pgadmin';
+  else if (action.includes('ca_valid'))       tag = 'rancher_ca_valid';
   else if (action.includes('aks_static_pv'))  tag = 'aks_static_pv';
   else if (action.includes('pgadmin'))        tag = 'pgadmin';
   const mode = action.startsWith('dryrun') ? '--check --diff ' : '';
