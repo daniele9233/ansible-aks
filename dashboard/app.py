@@ -3,6 +3,9 @@ import subprocess
 import threading
 import tempfile
 import shlex
+import shutil
+import json
+import re
 import os
 
 app = Flask(__name__)
@@ -30,7 +33,13 @@ COMMANDS = {
     'deploy_aks_static_pv':   {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'aks_static_pv'],                                       'needs_vault': True},
     'deploy_pgadmin':         {'exe': 'ansible-playbook', 'args': ['site.yml', '--tags', 'pgadmin'],                                             'needs_vault': True},
     'uninstall':              {'exe': 'bash',             'args': ['uninstall-rancher.sh'],                                                      'needs_vault': False},
+    'uninstall_pgadmin':      {'exe': 'bash',             'args': ['uninstall-pgadmin.sh'],                                                      'needs_vault': False},
 }
+
+# Nome PVC valido in Kubernetes: lowercase alfanumerici + '-' e '.'
+# (RFC 1123 subdomain, 253 char max). Usato per validare i nomi PV passati
+# dal client all'endpoint /api/disks/delete.
+_K8S_NAME_RE = re.compile(r'^[a-z0-9]([a-z0-9.\-]{0,251}[a-z0-9])?$')
 
 
 def _run(cmd_info, vault_password):
@@ -147,6 +156,99 @@ def api_run():
     t.start()
 
     return jsonify({'status': 'started'})
+
+
+def _kubectl_env():
+    """Env per chiamate kubectl sincrone (con venv attivo per kubeconfig coerente)."""
+    env = os.environ.copy()
+    env['VIRTUAL_ENV'] = VENV
+    env['PATH'] = f'{VENV}/bin:' + env.get('PATH', '')
+    env.pop('PYTHONHOME', None)
+    return env
+
+
+@app.route('/api/disks/list')
+def api_disks_list():
+    """Lista i PersistentVolume del cluster con metadati Azure Disk."""
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    try:
+        result = subprocess.run(
+            [kubectl, 'get', 'pv', '-o', 'json'],
+            capture_output=True, text=True, env=_kubectl_env(),
+            cwd=ANSIBLE_DIR, timeout=15,
+        )
+        if result.returncode != 0:
+            return jsonify({
+                'error': 'kubectl get pv ha fallito',
+                'detail': (result.stderr or result.stdout).strip()[:500],
+            }), 502
+        data = json.loads(result.stdout or '{}')
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'kubectl timeout (>15s)'}), 504
+    except json.JSONDecodeError as exc:
+        return jsonify({'error': f'output kubectl non JSON: {exc}'}), 502
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    items = []
+    for pv in data.get('items', []) or []:
+        meta = pv.get('metadata') or {}
+        spec = pv.get('spec') or {}
+        status = pv.get('status') or {}
+        csi = spec.get('csi') or {}
+        claim = spec.get('claimRef') or {}
+        bound_pvc = None
+        if claim.get('name'):
+            bound_pvc = f"{claim.get('namespace') or '-'}/{claim.get('name')}"
+        items.append({
+            'name': meta.get('name'),
+            'capacity': (spec.get('capacity') or {}).get('storage'),
+            'accessModes': spec.get('accessModes') or [],
+            'reclaimPolicy': spec.get('persistentVolumeReclaimPolicy'),
+            'storageClass': spec.get('storageClassName') or '',
+            'status': status.get('phase'),
+            'boundPVC': bound_pvc,
+            'csiDriver': csi.get('driver'),
+            'volumeHandle': csi.get('volumeHandle'),
+        })
+    # Ordine stabile: prima i Released (sicuri da cancellare), poi Available,
+    # poi Bound (rischiosi). All'interno: ordine alfabetico.
+    phase_rank = {'Released': 0, 'Available': 1, 'Bound': 2}
+    items.sort(key=lambda x: (phase_rank.get(x.get('status') or '', 9), x.get('name') or ''))
+    return jsonify({'items': items, 'count': len(items)})
+
+
+@app.route('/api/disks/delete', methods=['POST'])
+def api_disks_delete():
+    """Cancella i PersistentVolume selezionati (uno alla volta, riporta esito per nome)."""
+    payload = request.get_json(force=True, silent=True) or {}
+    names = payload.get('names')
+    if not isinstance(names, list) or not names:
+        return jsonify({'error': "Campo 'names' deve essere una lista non vuota"}), 400
+
+    invalid = [n for n in names if not (isinstance(n, str) and _K8S_NAME_RE.match(n))]
+    if invalid:
+        return jsonify({'error': f'Nomi PV non validi: {invalid}'}), 400
+
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    env = _kubectl_env()
+    results = []
+    for name in names:
+        try:
+            r = subprocess.run(
+                [kubectl, 'delete', 'pv', name, '--ignore-not-found', '--timeout=30s'],
+                capture_output=True, text=True, env=env, cwd=ANSIBLE_DIR, timeout=60,
+            )
+            results.append({
+                'name': name,
+                'ok': r.returncode == 0,
+                'output': ((r.stdout or '') + (r.stderr or '')).strip()[:400],
+            })
+        except subprocess.TimeoutExpired:
+            results.append({'name': name, 'ok': False, 'output': 'kubectl timeout (>60s)'})
+        except Exception as exc:
+            results.append({'name': name, 'ok': False, 'output': str(exc)})
+    return jsonify({'results': results})
 
 
 if __name__ == '__main__':

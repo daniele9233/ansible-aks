@@ -716,6 +716,41 @@
                 </div>
               </div>
             </div>
+
+            <!-- ============== UNINSTALL pgAdmin ============== -->
+            <div class="card p-6 max-w-[640px] mt-4" style="border-color: rgba(226,85,85,.35)">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style="background:rgba(226,85,85,.10); border:1px solid rgba(226,85,85,.30)">
+                  <i data-lucide="database" class="w-5 h-5 text-bad"></i>
+                </div>
+                <div class="min-w-0">
+                  <div class="font-medium">This will run <span class="font-mono text-fg">bash uninstall-pgadmin.sh</span></div>
+                  <p class="text-[12.5px] text-fg-mute mt-1">Removes pgAdmin (Deployment, Service, Ingress, Secrets, PVC <span class="font-mono">pvc-pgadmin</span>) from namespace <span class="font-mono">monitoring</span>. The namespace itself is deleted only if empty. The underlying Azure Disk (managed-csi, reclaim Delete) is automatically removed by AKS. No vault password required.</p>
+                  <div class="mt-5 flex gap-2">
+                    <button class="btn btn-danger" id="btn-open-uninstall-pgadmin"><i data-lucide="trash-2" class="w-4 h-4"></i>Run uninstall pgAdmin</button>
+                    <a href="#/dashboard" class="btn btn-ghost"><i data-lucide="x" class="w-4 h-4"></i>Cancel</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============== DELETE PERSISTENT VOLUMES ============== -->
+            <div class="card p-6 max-w-[640px] mt-4" style="border-color: rgba(232,168,56,.35)">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style="background:rgba(232,168,56,.10); border:1px solid rgba(232,168,56,.30)">
+                  <i data-lucide="hard-drive" class="w-5 h-5" style="color:#e8a838"></i>
+                </div>
+                <div class="min-w-0 w-full">
+                  <div class="font-medium">Delete PersistentVolumes</div>
+                  <p class="text-[12.5px] text-fg-mute mt-1">List the PVs currently registered in the cluster and delete the ones you select. <strong>Bound</strong> PVs are still attached to an active PVC: deleting them is risky. The underlying Azure Disk is removed only if the PV's <span class="font-mono">reclaimPolicy</span> is <span class="font-mono">Delete</span>; with <span class="font-mono">Retain</span> the disk remains in Azure and must be removed manually from the portal/CLI.</p>
+                  <div class="mt-4 flex gap-2 flex-wrap">
+                    <button class="btn btn-ghost" id="btn-disks-refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Refresh list</button>
+                    <button class="btn btn-danger" id="btn-disks-delete" disabled><i data-lucide="trash-2" class="w-4 h-4"></i>Delete selected (<span id="disks-selected-count">0</span>)</button>
+                  </div>
+                  <div id="disks-list" class="mt-4 text-[12px] text-fg-mute">Click <em>Refresh list</em> to load the PersistentVolumes.</div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="resize-handle" title="Trascina per ridimensionare"></div>
           <div data-term-slot class="shrink-0 bg-ink-900 sticky top-16 self-start" style="width:480px; height: calc(100vh - 64px);"></div>
@@ -928,6 +963,28 @@
   </div>
 </div>
 
+<!-- ============== GENERIC CONFIRM MODAL (pgAdmin / Disks) ============== -->
+<!-- Separato da #uninstall-modal per non interferire col flusso Rancher esistente. -->
+<div id="confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-back">
+  <div class="card p-6 w-full max-w-md mx-4" style="border:1px solid rgba(226,85,85,0.55)">
+    <div class="flex items-start gap-3 mb-4">
+      <div class="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style="background:rgba(226,85,85,.10); border:1px solid rgba(226,85,85,.30)">
+        <i data-lucide="alert-triangle" class="w-5 h-5 text-bad"></i>
+      </div>
+      <div>
+        <h3 id="confirm-title" class="text-[16px] font-semibold">Confirm</h3>
+        <p id="confirm-body" class="text-[12.5px] text-fg-mute mt-1">…</p>
+      </div>
+    </div>
+    <label class="text-[12px] text-fg-mute">Type <span id="confirm-expected-label" class="font-mono text-fg">CONFIRM</span> to confirm</label>
+    <input id="confirm-input" class="field font-mono mt-2" placeholder="CONFIRM" autocomplete="off" />
+    <div class="flex justify-end gap-2 mt-5">
+      <button class="btn btn-ghost" id="btn-cancel-confirm">Cancel</button>
+      <button class="btn btn-danger" id="btn-confirm-confirm" disabled>Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============== SHARED TERMINAL TEMPLATE ============== -->
 <template id="tpl-terminal-panel">
   <div class="flex flex-col h-full">
@@ -976,6 +1033,8 @@ const ACTION_LABEL = {
   deploy_aks_static_pv:   { name:'Deploy Static PV',        type:'Deploy' },
   deploy_pgadmin:         { name:'Deploy pgAdmin 4',        type:'Deploy' },
   uninstall:              { name:'Uninstall Rancher',       type:'Uninstall' },
+  uninstall_pgadmin:      { name:'Uninstall pgAdmin',       type:'Uninstall' },
+  delete_disks:           { name:'Delete PVs',               type:'Uninstall' },
 };
 
 const $ = (sel, root=document) => root.querySelector(sel);
@@ -1652,6 +1711,190 @@ $('#btn-confirm-uninstall').addEventListener('click', async () => {
   state.lastSeenLines = 0;
   pushTerminalLines([`\x1b[1;31m$ Uninstall Rancher — ${new Date().toLocaleTimeString()}\x1b[0m`]);
   await callRun('uninstall', '');
+});
+
+/* ============================================================
+   GENERIC CONFIRM MODAL (pgAdmin uninstall + disks delete)
+   ============================================================ */
+const confirmModal = $('#confirm-modal');
+let _confirmCb = null;
+let _confirmExpected = 'CONFIRM';
+
+function openConfirm({ title, bodyHtml, expected='CONFIRM', confirmLabel='Confirm', onConfirm }) {
+  _confirmCb = onConfirm;
+  _confirmExpected = expected;
+  $('#confirm-title').textContent = title;
+  $('#confirm-body').innerHTML = bodyHtml;
+  $('#confirm-expected-label').textContent = expected;
+  $('#confirm-input').placeholder = expected;
+  $('#confirm-input').value = '';
+  $('#btn-confirm-confirm').textContent = confirmLabel;
+  $('#btn-confirm-confirm').disabled = true;
+  confirmModal.classList.remove('hidden'); confirmModal.classList.add('flex');
+  setTimeout(()=> $('#confirm-input').focus(), 30);
+}
+function closeConfirm() {
+  confirmModal.classList.add('hidden'); confirmModal.classList.remove('flex');
+  _confirmCb = null;
+}
+$('#btn-cancel-confirm')?.addEventListener('click', closeConfirm);
+$('#confirm-input')?.addEventListener('input', (e) => {
+  $('#btn-confirm-confirm').disabled = e.target.value !== _confirmExpected;
+});
+$('#btn-confirm-confirm')?.addEventListener('click', () => {
+  const cb = _confirmCb;
+  closeConfirm();
+  if (typeof cb === 'function') cb();
+});
+
+/* ============================================================
+   UNINSTALL pgAdmin
+   ============================================================ */
+$('#btn-open-uninstall-pgadmin')?.addEventListener('click', () => {
+  openConfirm({
+    title: 'Confirm pgAdmin Uninstall',
+    bodyHtml: 'This will run <span class="font-mono text-fg">bash uninstall-pgadmin.sh</span> against the live cluster, removing pgAdmin and PVC <span class="font-mono text-fg">pvc-pgadmin</span> from namespace <span class="font-mono text-fg">monitoring</span>. The Azure Disk (managed-csi) is auto-cleaned. This action cannot be undone.',
+    expected: 'UNINSTALL',
+    confirmLabel: 'Confirm uninstall pgAdmin',
+    onConfirm: async () => {
+      pushJob('uninstall_pgadmin');
+      state.lastSeenLines = 0;
+      pushTerminalLines([`\x1b[1;31m$ Uninstall pgAdmin — ${new Date().toLocaleTimeString()}\x1b[0m`]);
+      await callRun('uninstall_pgadmin', '');
+    },
+  });
+});
+
+/* ============================================================
+   DELETE PERSISTENTVOLUMES (list + checkbox + delete)
+   ============================================================ */
+const _disksState = { items: [], selected: new Set() };
+
+function _phaseBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'bound')     return ['badge-run',  'Bound'];   // giallo = attenzione
+  if (s === 'released')  return ['badge-bad',  'Released'];
+  if (s === 'available') return ['badge-ok',   'Available'];
+  if (s === 'pending')   return ['badge-pend', 'Pending'];
+  return ['badge-pend', status || '?'];
+}
+function _esc(s) {
+  return (s == null ? '' : String(s))
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function _renderDisksList() {
+  const target = $('#disks-list');
+  const items = _disksState.items;
+  if (!items.length) {
+    target.innerHTML = '<div class="text-fg-mute">No PersistentVolumes in the cluster.</div>';
+    $('#btn-disks-delete').disabled = true;
+    $('#disks-selected-count').textContent = '0';
+    return;
+  }
+  const rows = items.map(pv => {
+    const [badgeCls, badgeText] = _phaseBadge(pv.status);
+    const checked = _disksState.selected.has(pv.name) ? 'checked' : '';
+    const meta = [pv.capacity, pv.reclaimPolicy, pv.storageClass || '(no class)']
+      .filter(Boolean).join(' · ');
+    const bind = pv.boundPVC
+      ? `&rarr; <span class="font-mono">${_esc(pv.boundPVC)}</span>`
+      : '<span class="text-fg-dim">unbound</span>';
+    const handle = pv.volumeHandle
+      ? `<div class="text-[10.5px] text-fg-dim mt-1 font-mono truncate" title="${_esc(pv.volumeHandle)}">${_esc(pv.volumeHandle)}</div>`
+      : '';
+    return `
+      <label class="flex items-start gap-3 p-2.5 border-b border-rule cursor-pointer hover:bg-ink-700/40">
+        <input type="checkbox" class="disk-chk mt-1" data-name="${_esc(pv.name)}" ${checked} />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-fg text-[12.5px]">${_esc(pv.name)}</span>
+            <span class="badge ${badgeCls}"><span class="dot"></span>${_esc(badgeText)}</span>
+          </div>
+          <div class="text-[11px] text-fg-mute mt-0.5">${_esc(meta)} &middot; ${bind}</div>
+          ${handle}
+        </div>
+      </label>
+    `;
+  }).join('');
+  target.innerHTML = `<div class="border border-rule rounded-md overflow-hidden">${rows}</div>`;
+  $$('.disk-chk', target).forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const n = e.target.dataset.name;
+      if (e.target.checked) _disksState.selected.add(n);
+      else _disksState.selected.delete(n);
+      const sz = _disksState.selected.size;
+      $('#disks-selected-count').textContent = String(sz);
+      $('#btn-disks-delete').disabled = sz === 0;
+    });
+  });
+  $('#disks-selected-count').textContent = String(_disksState.selected.size);
+  $('#btn-disks-delete').disabled = _disksState.selected.size === 0;
+}
+
+$('#btn-disks-refresh')?.addEventListener('click', async () => {
+  const target = $('#disks-list');
+  target.innerHTML = '<div class="text-fg-mute">Loading…</div>';
+  try {
+    const r = await fetch(API + '/api/disks/list');
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    _disksState.items = data.items || [];
+    // Mantieni solo le selezioni che esistono ancora nella lista
+    const present = new Set(_disksState.items.map(x => x.name));
+    for (const n of Array.from(_disksState.selected)) {
+      if (!present.has(n)) _disksState.selected.delete(n);
+    }
+    _renderDisksList();
+  } catch (e) {
+    target.innerHTML = `<div class="text-[12px]" style="color:#f08c8c">Error: ${_esc(e.message)}</div>`;
+    $('#btn-disks-delete').disabled = true;
+    $('#disks-selected-count').textContent = '0';
+  }
+});
+
+$('#btn-disks-delete')?.addEventListener('click', () => {
+  const names = Array.from(_disksState.selected);
+  if (!names.length) return;
+  const list = names.map(n => `<span class="font-mono text-fg">${_esc(n)}</span>`).join(', ');
+  openConfirm({
+    title: 'Confirm PV deletion',
+    bodyHtml: `Will run <span class="font-mono text-fg">kubectl delete pv</span> on <strong>${names.length}</strong> PersistentVolume(s): ${list}. The Azure Disk is removed only if reclaim policy is <span class="font-mono text-fg">Delete</span>. This action cannot be undone.`,
+    expected: 'DELETE',
+    confirmLabel: 'Delete selected',
+    onConfirm: async () => {
+      pushJob('delete_disks');
+      state.lastSeenLines = 0;
+      pushTerminalLines([
+        `\x1b[1;31m$ Delete PVs (${names.length}) — ${new Date().toLocaleTimeString()}\x1b[0m`,
+        `\x1b[2m  ${names.join(', ')}\x1b[0m`,
+      ]);
+      try {
+        const r = await fetch(API + '/api/disks/delete', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ names }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+        const lines = [];
+        for (const res of (data.results || [])) {
+          const tag = res.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+          const out = res.output ? '  ' + res.output.replace(/\n/g, '\n  ') : '';
+          lines.push(`${tag} ${res.name}${out ? '\n' + out : ''}`);
+        }
+        pushTerminalLines(lines);
+        setRunningStatus('success', 'delete_disks');
+      } catch (e) {
+        pushTerminalLines([`\x1b[31m✗ ${e.message}\x1b[0m`]);
+        setRunningStatus('failed', 'delete_disks');
+      } finally {
+        _disksState.selected.clear();
+        $('#btn-disks-refresh').click();
+      }
+    },
+  });
 });
 
 /* ============================================================
