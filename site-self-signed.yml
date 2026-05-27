@@ -1,0 +1,35 @@
+---
+# Entrypoint SEPARATO per Rancher in modalita' Self-Signed (cert-manager
+# genera autonomamente il cert TLS). Scelta architetturale:
+# il path Self-Signed e' incompatibile con il path CA-Valid (stesso namespace
+# 'cattle-system' + stesso hostname + due fonti TLS in conflitto). Tenerlo in
+# un file dedicato rende la mutua esclusivita' fisica, non piu' affidata al
+# tag 'never' su site.yml.
+#
+# Esecuzione:
+#   ansible-playbook site-self-signed.yml --ask-vault-pass
+#
+# Dry-run:
+#   ansible-playbook site-self-signed.yml --check --diff --ask-vault-pass
+#
+# Accesso post-install: SSH tunnel + kubectl port-forward (vedi HOW-TO).
+#
+# NB: il role rancher_install include implicitamente cert-manager
+#     (vedi roles/rancher_install/tasks/00-rancher-install.yml).
+#     NON serve Traefik in questa modalita'.
+
+- name: Install Rancher (self-signed via cert-manager) on AKS
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Pre-installation checks
+      ansible.builtin.import_role:
+        name: requisrment_preinstall
+        tasks_from: requisiti.yml
+      tags:
+        - always
+
+    - name: Install Rancher (self-signed / cert-manager)
+      ansible.builtin.import_role:
+        name: rancher_install
+        tasks_from: 00-rancher-install.yml

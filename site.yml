@@ -1,58 +1,52 @@
 ---
-# Entrypoint orchestrator.
+# Entrypoint dello stack di produzione su AKS.
+# La modalita' Rancher Self-Signed e' in un file SEPARATO (site-self-signed.yml)
+# per evitare conflitti con la modalita' CA-Valid (stesso namespace + hostname).
 #
-# Scegli il metodo TLS tramite tag:
+# Esecuzione completa (full stack):
+#   ansible-playbook site.yml --ask-vault-pass
 #
-#   Certificato self-signed (cert-manager):
-#     ansible-playbook site.yml --tags rancher_self_signed --vault-password-file .vault_pass
+# Componenti installati (in ordine):
+#   1. Pre-installation checks       (sempre, tag: always)
+#   2. Traefik Ingress Controller    (tag: traefik | rancher_ca_valid)
+#   3. Rancher CA-Valid              (tag: rancher_ca_valid)
+#   4. Static PV (Azure Managed Disk)(tag: aks_static_pv)
+#   5. pgAdmin 4                     (tag: pgadmin)
 #
-#   Certificato CA valido (*.app.iac-svil.almaviva.it) + Traefik ingress:
-#     ansible-playbook site.yml --tags rancher_ca_valid --vault-password-file .vault_pass
+# Esecuzione mirata (esempi):
+#   ansible-playbook site.yml --tags traefik          # solo Traefik
+#   ansible-playbook site.yml --tags rancher_ca_valid # Traefik + Rancher
+#   ansible-playbook site.yml --tags aks_static_pv    # solo Static PV
+#   ansible-playbook site.yml --tags pgadmin          # solo pgAdmin
+#   (i pre-check girano comunque grazie a tag 'always')
 #
-#   Solo Traefik (utile per provisioning standalone):
-#     ansible-playbook site.yml --tags traefik --vault-password-file .vault_pass
+# Dry-run:
+#   ansible-playbook site.yml --check --diff --ask-vault-pass
 #
-#   Static PV su Azure Managed Disk gia' esistente (provisioning statico):
-#     ansible-playbook site.yml --tags aks_static_pv --vault-password-file .vault_pass
-#
-#   pgAdmin 4 (GUI web per PostgreSQL esterni) dietro Traefik:
-#     ansible-playbook site.yml --tags pgadmin --vault-password-file .vault_pass
-#
-# Prima di usare rancher_ca_valid: completare il fullchain in vault_cavalid.yml
-#   e cifrarlo con ansible-vault.
-# Prima di usare aks_static_pv: completare e cifrare il vault dedicato
-#   group_vars/all/vault_storage.yml (variabili vault_azure_subscription_id,
-#   vault_azure_resource_group, vault_azure_disk_name).
-# Prima di usare pgadmin: completare e cifrare group_vars/all/vault_pgadmin.yml
-#   (vault_pgadmin_admin_email, vault_pgadmin_admin_password). pgadmin riusa
-#   il fullchain wildcard di vault_cavalid.yml. La PVC pvc-pgadmin (4Gi,
-#   managed-csi) viene creata automaticamente dal role nel namespace
-#   monitoring, senza dipendenza da aks_static_pv.
+# Vault prereq (cifrati con la stessa password):
+#   group_vars/all/vault.yml          (segreti generici)
+#   group_vars/all/vault_cavalid.yml  (fullchain TLS wildcard *.app.iac-svil.almaviva.it)
+#   group_vars/all/vault_storage.yml  (Azure Managed Disk identifiers)
+#   group_vars/all/vault_pgadmin.yml  (admin email/password pgAdmin)
 
-- name: Install Rancher on AKS
+- name: Install full stack on AKS (Traefik + Rancher CA-Valid + Static PV + pgAdmin)
   hosts: localhost
   gather_facts: no
   tasks:
+    # -------------------------------------------------------------------------
+    # PRE-CHECK (gira sempre, anche con --tags X mirato)
+    # -------------------------------------------------------------------------
     - name: Pre-installation checks
       ansible.builtin.import_role:
         name: requisrment_preinstall
         tasks_from: requisiti.yml
-
-    # -------------------------------------------------------------------------
-    # OPZIONE A: Rancher con certificato self-signed gestito da cert-manager
-    # -------------------------------------------------------------------------
-    - name: Install Rancher (self-signed / cert-manager)
-      ansible.builtin.import_role:
-        name: rancher_install
-        tasks_from: 00-rancher-install.yml
       tags:
-        - rancher_self_signed
-        - never
+        - always
 
     # -------------------------------------------------------------------------
-    # OPZIONE B: Traefik (Ingress Controller) + Rancher CA valida
-    # I tag sono condivisi: --tags rancher_ca_valid esegue entrambi in ordine.
-    # --tags traefik esegue solo Traefik.
+    # 1) Traefik (Ingress Controller, prerequisito di Rancher CA-Valid e pgAdmin)
+    #    Tag 'traefik' per esecuzione standalone, 'rancher_ca_valid' per essere
+    #    incluso automaticamente quando si chiede l'install Rancher.
     # -------------------------------------------------------------------------
     - name: Install Traefik Ingress Controller
       ansible.builtin.import_role:
@@ -60,38 +54,33 @@
       tags:
         - rancher_ca_valid
         - traefik
-        - never
 
+    # -------------------------------------------------------------------------
+    # 2) Rancher con certificato CA valido (wildcard *.app.iac-svil.almaviva.it)
+    # -------------------------------------------------------------------------
     - name: Install Rancher (CA valid cert -- *.app.iac-svil.almaviva.it)
       ansible.builtin.import_role:
         name: rancher_CAValid_install
         tasks_from: 00-rancher-CAValid-install.yml
       tags:
         - rancher_ca_valid
-        - never
 
     # -------------------------------------------------------------------------
-    # OPZIONE C: Static PersistentVolume bound a un Azure Managed Disk esistente
-    # Provisioning statico: niente StorageClass, ciclo di vita del disco fuori IaC.
+    # 3) Static PersistentVolume bound a un Azure Managed Disk esistente
     # -------------------------------------------------------------------------
     - name: Create static PersistentVolume bound to existing Azure Managed Disk
       ansible.builtin.import_role:
         name: aks_static_pv_install
       tags:
         - aks_static_pv
-        - never
 
     # -------------------------------------------------------------------------
-    # OPZIONE D: pgAdmin 4 (GUI web per database PostgreSQL ESTERNI)
-    # Richiede solo Traefik (Ingress). La PVC pvc-pgadmin (4Gi, managed-csi)
-    # viene creata automaticamente dal role nel namespace 'monitoring',
-    # senza dipendenza da aks_static_pv. Esposto su
-    # https://pgadmin.app.iac-svil.almaviva.it con cert wildcard AlmavivA
-    # (stesso usato per Rancher CA Valid).
+    # 4) pgAdmin 4 (GUI web per database PostgreSQL ESTERNI)
+    #    Richiede Traefik (Ingress) e il wildcard TLS di vault_cavalid.yml.
+    #    La PVC pvc-pgadmin (4Gi, managed-csi) viene creata dal role stesso.
     # -------------------------------------------------------------------------
     - name: Install pgAdmin 4 (web admin per PostgreSQL esterni)
       ansible.builtin.import_role:
         name: pgadmin_install
       tags:
         - pgadmin
-        - never

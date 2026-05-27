@@ -27,19 +27,37 @@ Visualizzare il contenuto dei vault senza salvare in chiaro su disco:
 --------------------------------------------------------------------------------
 
 
+ # Full stack (Traefik + Rancher CA-Valid + Static PV + pgAdmin):
+ ansible-playbook site.yml --check --diff --ask-vault-pass
+
+ # Solo Rancher CA-Valid (con Traefik):
  ansible-playbook site.yml --tags rancher_ca_valid --check --diff --ask-vault-pass
- ansible-playbook site.yml --tags rancher_self_signed --check --diff --ask-vault-pass
+
+ # Solo Rancher Self-Signed (playbook separato, incompatibile con CA-Valid):
+ ansible-playbook site-self-signed.yml --check --diff --ask-vault-pass
+
+ # Tag mirati (i pre-check girano comunque, sono taggati 'always'):
+ ansible-playbook site.yml --tags aks_static_pv --check --diff --ask-vault-pass
+ ansible-playbook site.yml --tags pgadmin --check --diff --ask-vault-pass
+ ansible-playbook site.yml --tags traefik --check --diff --ask-vault-pass
 
 --------------------------------------------------------------------------------
 4) RUN VERO
 --------------------------------------------------------------------------------
 
-Esecuzione completa:
+Full stack (Traefik + Rancher CA-Valid + Static PV + pgAdmin):
     ansible-playbook site.yml --ask-vault-pass
 
+Solo Rancher CA-Valid (con Traefik):
+    ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass
 
- ansible-playbook site.yml --tags rancher_ca_valid --ask-vault-pass
- ansible-playbook site.yml --tags rancher_self_signed --ask-vault-pass
+Solo Rancher Self-Signed (playbook separato):
+    ansible-playbook site-self-signed.yml --ask-vault-pass
+
+Tag mirati (i pre-check girano comunque, sono taggati 'always'):
+    ansible-playbook site.yml --tags aks_static_pv --ask-vault-pass
+    ansible-playbook site.yml --tags pgadmin --ask-vault-pass
+    ansible-playbook site.yml --tags traefik --ask-vault-pass
 
 
 --------------------------------------------------------------------------------
@@ -72,8 +90,8 @@ SSH tunnel + kubectl port-forward.
 
 === MODALITA' A (Self-Signed · dev/test) ===
 
-    Playbook:
-        ansible-playbook site.yml --tags rancher_self_signed --ask-vault-pass
+    Playbook (file dedicato, separato da site.yml):
+        ansible-playbook site-self-signed.yml --ask-vault-pass
 
     STEP 1 — SSH tunnel dal PC Windows (lascia aperto):
 
@@ -104,7 +122,7 @@ SSH tunnel + kubectl port-forward.
 
     Parametro              Modalita' A (self-signed)         Modalita' B (CA valida)
     ---------------------  --------------------------------  ---------------------------
-    Tag playbook           --tags rancher_self_signed        --tags rancher_ca_valid
+    Playbook               site-self-signed.yml              site.yml (--tags rancher_ca_valid)
     Cert nel browser       Self-signed (avviso)              AlmavivA wildcard (verde)
     SSH tunnel             Richiesto (8443 -> VM:8443)       Non richiesto
     kubectl port-forward   svc/rancher -n cattle-system      Non richiesto

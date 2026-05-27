@@ -607,9 +607,9 @@
                   <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <div class="font-semibold text-[15px]">Dry-Run · Full stack</div>
                     <span class="badge badge-ok"><span class="dot"></span>via maestra</span>
-                    <span class="badge badge-info"><span class="dot"></span>tag: rancher_ca_valid,aks_static_pv,pgadmin</span>
+                    <span class="badge badge-info"><span class="dot"></span>ansible-playbook site.yml --check --diff</span>
                   </div>
-                  <p class="text-[12.5px] text-fg-mute mt-1">Simulate the full stack install in one shot: Traefik + Rancher CA-Valid + Static PV (Azure Disk) + pgAdmin 4. Single vault prompt, single playbook, order enforced by <span class="font-mono">site.yml</span>.</p>
+                  <p class="text-[12.5px] text-fg-mute mt-1">Simulate the full stack install in one shot: pre-check + Traefik + Rancher CA-Valid + Static PV (Azure Disk) + pgAdmin 4. Single vault prompt, single playbook, order enforced by <span class="font-mono">site.yml</span>.</p>
                   <button class="btn btn-primary w-full justify-center mt-4" data-action="dryrun_all" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run · Full stack</button>
                 </div>
               </div>
@@ -626,10 +626,10 @@
               </div>
               <div class="card card-hover p-5">
                 <div class="flex items-center gap-3 mb-2">
-                  <span class="badge badge-info"><span class="dot"></span>tag: rancher_self_signed</span>
+                  <span class="badge badge-info"><span class="dot"></span>site-self-signed.yml</span>
                 </div>
                 <div class="font-medium text-[14px] mb-1">Self-Signed mode</div>
-                <p class="text-[12px] text-fg-mute mb-4">Simulate Rancher install generating its own self-signed cert.</p>
+                <p class="text-[12px] text-fg-mute mb-4">Simulate Rancher install with its own self-signed cert (cert-manager). Separate playbook from <span class="font-mono">site.yml</span>.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="dryrun_self" data-vault><i data-lucide="flask-conical" class="w-4 h-4"></i>Run dry-run</button>
               </div>
               <div class="card card-hover p-5">
@@ -709,7 +709,7 @@
               </div>
               <div class="card card-hover p-5">
                 <div class="font-medium text-[14px] mb-1">Deploy · Self-Signed</div>
-                <p class="text-[12px] text-fg-mute mb-4">Install Rancher with its bundled self-signed certificate.</p>
+                <p class="text-[12px] text-fg-mute mb-4">Install Rancher with its bundled self-signed certificate (cert-manager). Runs <span class="font-mono">site-self-signed.yml</span> — separate playbook from the full stack.</p>
                 <button class="btn btn-primary w-full justify-center" data-action="deploy_self" data-vault><i data-lucide="rocket" class="w-4 h-4"></i>Deploy Self-Signed</button>
               </div>
               <div class="card card-hover p-5">
@@ -1601,15 +1601,24 @@ function mockSequenceFor(action) {
       'removing namespace \x1b[33mcattle-fleet-system\x1b[0m...',
     ];
   }
-  let tag = 'rancher_self_signed';
-  if (action === 'dryrun_all' || action === 'deploy_all')
-                                              tag = 'rancher_ca_valid,aks_static_pv,pgadmin';
-  else if (action.includes('ca_valid'))       tag = 'rancher_ca_valid';
-  else if (action.includes('aks_static_pv'))  tag = 'aks_static_pv';
-  else if (action.includes('pgadmin'))        tag = 'pgadmin';
+  // Costruisce il comando shell esatto che gira davvero (vedi COMMANDS in app.py).
+  // Senza tag per: deploy_all, dryrun_all (site.yml = full stack); deploy_self,
+  // dryrun_self (site-self-signed.yml e' il file dedicato).
   const mode = action.startsWith('dryrun') ? '--check --diff ' : '';
+  let cmd;
+  if (action === 'dryrun_all' || action === 'deploy_all') {
+    cmd = `ansible-playbook ${mode}site.yml`;
+  } else if (action === 'dryrun_self' || action === 'deploy_self') {
+    cmd = `ansible-playbook ${mode}site-self-signed.yml`;
+  } else {
+    let tag = 'pgadmin';
+    if (action.includes('ca_valid'))           tag = 'rancher_ca_valid';
+    else if (action.includes('aks_static_pv')) tag = 'aks_static_pv';
+    else if (action.includes('pgadmin'))       tag = 'pgadmin';
+    cmd = `ansible-playbook ${mode}--tags ${tag} site.yml`;
+  }
   return [
-    `\x1b[1;36m+ ansible-playbook -i inventory/prod ${mode}--tags ${tag} site.yml\x1b[0m`,
+    `\x1b[1;36m+ ${cmd}\x1b[0m`,
     '',
     '\x1b[33mPLAY [Install Rancher on AKS] ********************************\x1b[0m',
     '',
@@ -1997,6 +2006,7 @@ const SCREEN_SOURCE_FILES = {
   ],
   dryrun: [
     { path:'site.yml',                                                              label:'site.yml' },
+    { path:'site-self-signed.yml',                                                  label:'site-self-signed.yml' },
     { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
     { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
@@ -2005,6 +2015,7 @@ const SCREEN_SOURCE_FILES = {
   ],
   deploy: [
     { path:'site.yml',                                                              label:'site.yml' },
+    { path:'site-self-signed.yml',                                                  label:'site-self-signed.yml' },
     { path:'roles/rancher_install/tasks/00-rancher-install.yml',                    label:'rancher_install.yml' },
     { path:'roles/rancher_CAValid_install/tasks/00-rancher-CAValid-install.yml',    label:'rancher_CAValid_install.yml' },
     { path:'roles/traefik_install/tasks/main.yml',                                  label:'traefik_install.yml' },
