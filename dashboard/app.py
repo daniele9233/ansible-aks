@@ -174,6 +174,152 @@ def _kubectl_env():
     return env
 
 
+# ---------------------------------------------------------------------------
+# Inventario componenti dello stack (mappa 1:1 i role di site.yml).
+# namespace/deployment sono i nomi reali creati dai role; 'ingress' (ns, name)
+# serve a ricavare l'URL pubblico dall'Ingress effettivo nel cluster.
+# ---------------------------------------------------------------------------
+COMPONENTS = [
+    {'key': 'traefik',      'name': 'Traefik',      'kind': 'Ingress Controller',
+     'namespace': 'traefik',       'deployment': 'traefik',        'ingress': None},
+    {'key': 'rancher',      'name': 'Rancher',      'kind': 'Platform',
+     'namespace': 'cattle-system', 'deployment': 'rancher',        'ingress': ('cattle-system', 'rancher')},
+    {'key': 'cert-manager', 'name': 'cert-manager', 'kind': 'TLS',
+     'namespace': 'cert-manager',  'deployment': 'cert-manager',   'ingress': None},
+    {'key': 'pgadmin',      'name': 'pgAdmin 4',    'kind': 'Application',
+     'namespace': 'monitoring',    'deployment': 'pgadmin',        'ingress': ('monitoring', 'pgadmin')},
+    {'key': 'grafana',      'name': 'Grafana 11',   'kind': 'Observability',
+     'namespace': 'monitoring',    'deployment': 'grafana',        'ingress': ('monitoring', 'grafana')},
+]
+
+
+def _kubectl_json(kubectl, env, args, timeout=15):
+    """Esegue 'kubectl <args>' attesi in JSON. Ritorna (data|None, error|None)."""
+    try:
+        r = subprocess.run(
+            [kubectl] + args,
+            capture_output=True, text=True, env=env, cwd=ANSIBLE_DIR, timeout=timeout,
+        )
+        if r.returncode != 0:
+            return None, ((r.stderr or r.stdout) or '').strip()[:300]
+        return json.loads(r.stdout or '{}'), None
+    except subprocess.TimeoutExpired:
+        return None, f'kubectl timeout >{timeout}s'
+    except json.JSONDecodeError as exc:
+        return None, f'output non JSON: {exc}'
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _image_tag(deploy):
+    """Estrae il tag immagine del primo container (es. grafana/grafana:11.3.0 -> 11.3.0)."""
+    try:
+        containers = (((deploy.get('spec') or {}).get('template') or {})
+                      .get('spec') or {}).get('containers') or []
+        if not containers:
+            return None
+        image = containers[0].get('image', '')
+        # separa il tag dall'eventuale registry:port/repo
+        last = image.rsplit('/', 1)[-1]
+        return last.split(':', 1)[1] if ':' in last else 'latest'
+    except Exception:
+        return None
+
+
+def _collect_nodes(kubectl, env):
+    """Stato dei nodi del cluster + versione Kubernetes (dal kubelet del primo nodo)."""
+    data, err = _kubectl_json(kubectl, env, ['get', 'nodes', '-o', 'json'])
+    items, ready, version = [], 0, None
+    for n in (data or {}).get('items', []) or []:
+        conds = (n.get('status') or {}).get('conditions', []) or []
+        is_ready = any(c.get('type') == 'Ready' and c.get('status') == 'True' for c in conds)
+        if is_ready:
+            ready += 1
+        ni = (n.get('status') or {}).get('nodeInfo') or {}
+        if not version:
+            version = ni.get('kubeletVersion')
+        items.append({
+            'name': (n.get('metadata') or {}).get('name'),
+            'ready': is_ready,
+            'version': ni.get('kubeletVersion'),
+        })
+    return {'ready': ready, 'total': len(items), 'k8sVersion': version,
+            'items': items, 'error': err}
+
+
+def _collect_components(kubectl, env):
+    """Stato di ogni componente dello stack a partire dai Deployment + Ingress reali."""
+    deploys, derr = _kubectl_json(kubectl, env, ['get', 'deploy', '-A', '-o', 'json'])
+    ingresses, ierr = _kubectl_json(kubectl, env, ['get', 'ingress', '-A', '-o', 'json'])
+
+    dmap = {}
+    for d in (deploys or {}).get('items', []) or []:
+        m = d.get('metadata') or {}
+        dmap[(m.get('namespace'), m.get('name'))] = d
+    imap = {}
+    for ing in (ingresses or {}).get('items', []) or []:
+        m = ing.get('metadata') or {}
+        imap[(m.get('namespace'), m.get('name'))] = ing
+
+    out = []
+    for c in COMPONENTS:
+        comp = {'key': c['key'], 'name': c['name'], 'kind': c['kind'],
+                'namespace': c['namespace'], 'installed': False,
+                'version': None, 'ready': 0, 'desired': 0,
+                'status': 'absent', 'url': None}
+        d = dmap.get((c['namespace'], c['deployment']))
+        if d:
+            spec = d.get('spec') or {}
+            st = d.get('status') or {}
+            desired = spec.get('replicas', 0) or 0
+            ready = st.get('readyReplicas', 0) or 0
+            comp.update({
+                'installed': True,
+                'desired': desired,
+                'ready': ready,
+                'version': _image_tag(d),
+                'status': 'healthy' if (desired > 0 and ready == desired)
+                          else ('degraded' if ready > 0 else 'down'),
+            })
+        if c.get('ingress'):
+            ing = imap.get(c['ingress'])
+            rules = ((ing or {}).get('spec') or {}).get('rules') or []
+            if rules and rules[0].get('host'):
+                comp['url'] = 'https://' + rules[0]['host']
+        out.append(comp)
+    return out, (derr or ierr)
+
+
+@app.route('/api/health')
+def api_health():
+    """Riepilogo salute cluster per la home: nodi, versione K8s, conteggio componenti."""
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    env = _kubectl_env()
+    nodes = _collect_nodes(kubectl, env)
+    comps, cerr = _collect_components(kubectl, env)
+    healthy = sum(1 for c in comps if c['status'] == 'healthy')
+    return jsonify({
+        'nodes': {'ready': nodes['ready'], 'total': nodes['total']},
+        'k8sVersion': nodes['k8sVersion'],
+        'rancher': next((c for c in comps if c['key'] == 'rancher'), None),
+        'components': {
+            'healthy': healthy,
+            'total': len(comps),
+            'items': [{'key': c['key'], 'name': c['name'], 'status': c['status']} for c in comps],
+        },
+        'error': nodes.get('error') or cerr,
+    })
+
+
+@app.route('/api/stack')
+def api_stack():
+    """Inventario dettagliato dei componenti dello stack (pagina Stack)."""
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    env = _kubectl_env()
+    comps, err = _collect_components(kubectl, env)
+    return jsonify({'components': comps, 'error': err})
+
+
 @app.route('/api/cluster')
 def api_cluster():
     """Nome del cluster corrente = kubectl config current-context.
