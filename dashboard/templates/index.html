@@ -84,15 +84,30 @@
   summary { list-style: none; }
   summary::-webkit-details-marker { display:none; }
 
-  /* progress ring — the conic-gradient lives on ::before so the
-     center label (a child) is rendered above the mask, not clipped by it */
+  /* progress ring — gauge style. The arc lives on ::before (masked to a thin
+     band) and a soft colored glow on ::after; the center label is a child,
+     rendered above the negative-z pseudos. --ring-val (0-100) + --ring-color
+     are animatable thanks to @property, so the ring fills in smoothly. */
+  @property --ring-val   { syntax: '<number>'; inherits: false; initial-value: 0; }
+  @property --ring-color { syntax: '<color>';  inherits: false; initial-value: #6a7280; }
+
   .ring-prog { position: relative; isolation: isolate; }
+  /* the value arc (thin band, starts at 12 o'clock; unfilled = faint track) */
   .ring-prog::before {
     content: "";
     position: absolute; inset: 0; border-radius: 9999px; z-index: -1;
-    background: conic-gradient(var(--ring-color) calc(var(--ring-val) * 1%), #1f2733 0);
-    -webkit-mask: radial-gradient(circle, transparent calc(50% - 4px), black calc(50% - 3.5px));
-            mask: radial-gradient(circle, transparent calc(50% - 4px), black calc(50% - 3.5px));
+    background: conic-gradient(from -90deg,
+        var(--ring-color) calc(var(--ring-val) * 1%), rgba(255,255,255,.07) 0);
+    -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+            mask: radial-gradient(closest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+    transition: --ring-val .7s cubic-bezier(.4,0,.2,1), --ring-color .3s ease;
+  }
+  /* soft status-colored halo behind the ring */
+  .ring-prog::after {
+    content: "";
+    position: absolute; inset: 0; border-radius: 9999px; z-index: -2;
+    background: radial-gradient(circle, color-mix(in srgb, var(--ring-color) 22%, transparent), transparent 72%);
+    transition: background .3s ease;
   }
 
   /* status pulse */
@@ -435,11 +450,11 @@
           <!-- Cluster Status (live via /api/health) -->
           <div class="card card-hover p-5">
             <div class="flex items-start gap-4">
-              <div class="ring-prog w-[68px] h-[68px] rounded-full flex items-center justify-center shrink-0"
+              <div class="ring-prog w-[76px] h-[76px] rounded-full flex items-center justify-center shrink-0"
                    id="health-nodes-ring" style="--ring-color:#6a7280; --ring-val:100">
                 <div class="text-center" id="health-nodes-center">
-                  <div class="text-[9px] tracking-widest text-fg-mute">NODES</div>
-                  <div class="text-[12px] font-semibold text-fg-mute">—</div>
+                  <div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">NODES</div>
+                  <div class="text-[15px] font-bold leading-none text-fg-mute">—</div>
                 </div>
               </div>
               <div class="min-w-0 flex-1">
@@ -454,12 +469,12 @@
           <!-- Last Operation -->
           <div class="card card-hover p-5" id="card-last-op">
             <div class="flex items-start gap-4">
-              <div class="ring-prog w-[68px] h-[68px] rounded-full flex items-center justify-center shrink-0"
+              <div class="ring-prog w-[76px] h-[76px] rounded-full flex items-center justify-center shrink-0"
                    id="last-op-ring"
                    style="--ring-color:#6a7280; --ring-val:100">
                 <div class="text-center" id="last-op-center">
-                  <div class="text-[9px] tracking-widest text-fg-mute">JOB</div>
-                  <div class="text-[12px] font-semibold text-fg-mute">IDLE</div>
+                  <div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">JOB</div>
+                  <div class="text-[12.5px] font-bold leading-none text-fg-mute">IDLE</div>
                 </div>
               </div>
               <div class="min-w-0 flex-1">
@@ -474,11 +489,11 @@
           <!-- Rancher version (live via /api/health) -->
           <div class="card card-hover p-5">
             <div class="flex items-start gap-4">
-              <div class="ring-prog w-[68px] h-[68px] rounded-full flex items-center justify-center shrink-0"
+              <div class="ring-prog w-[76px] h-[76px] rounded-full flex items-center justify-center shrink-0"
                    id="health-rancher-ring" style="--ring-color:#6a7280; --ring-val:100">
                 <div class="text-center" id="health-rancher-center">
-                  <div class="text-[9px] tracking-widest text-fg-mute">IMAGE</div>
-                  <div class="text-[12px] font-semibold text-fg-mute">—</div>
+                  <div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">IMAGE</div>
+                  <div class="text-[12.5px] font-bold leading-none text-fg-mute">—</div>
                 </div>
               </div>
               <div class="min-w-0 flex-1">
@@ -1432,8 +1447,8 @@ function updateLastOpCard(status, action) {
   if (ring) {
     ring.style.setProperty('--ring-color', colors[status]);
     ring.style.setProperty('--ring-val', status==='idle' ? 100 : 100);
-    center.innerHTML = `<div class="text-[9px] tracking-widest text-fg-mute">JOB</div>
-      <div class="text-[12px] font-semibold" style="color:${colors[status]}">${labels[status]}</div>`;
+    center.innerHTML = `<div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">JOB</div>
+      <div class="text-[12.5px] font-bold leading-none" style="color:${colors[status]}">${labels[status]}</div>`;
   }
   if (action) {
     $('#last-op-name').textContent = ACTION_LABEL[action]?.name || action;
@@ -1654,7 +1669,7 @@ function setHealthError(msg) {
   const k = $('#health-k8s'); if (k) k.textContent = msg || 'kubectl error';
   const ring = $('#health-nodes-ring'); if (ring) ring.style.setProperty('--ring-color', '#e25555');
   const center = $('#health-nodes-center');
-  if (center) center.innerHTML = '<div class="text-[9px] tracking-widest text-fg-mute">NODES</div><div class="text-[12px] font-semibold text-bad">ERR</div>';
+  if (center) center.innerHTML = '<div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">NODES</div><div class="text-[14px] font-bold leading-none text-bad">ERR</div>';
   const sum = $('#health-summary'); if (sum) { sum.textContent = msg || 'cluster unreachable'; sum.className = 'text-bad'; }
   const pills = $('#health-pills'); if (pills) pills.innerHTML = '<span class="text-[12px] text-bad px-2 py-1">Cannot read cluster components</span>';
   const rt = $('#health-rancher-text'); if (rt) rt.textContent = 'unknown';
@@ -1672,8 +1687,8 @@ function renderClusterHealth(d) {
     ring.style.setProperty('--ring-val', noneTotal ? 100 : Math.round((nodes.ready/nodes.total)*100));
   }
   const center = $('#health-nodes-center');
-  if (center) center.innerHTML = `<div class="text-[9px] tracking-widest text-fg-mute">NODES</div>
-    <div class="text-[13px] font-semibold" style="color:${ringColor}">${nodes.ready}/${nodes.total}</div>`;
+  if (center) center.innerHTML = `<div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">NODES</div>
+    <div class="text-[15px] font-bold leading-none" style="color:${ringColor}">${nodes.ready}/${nodes.total}</div>`;
   const nt = $('#health-nodes-text');
   if (nt) nt.textContent = noneTotal ? 'No nodes reachable'
         : (allReady ? 'All nodes Ready' : `${nodes.total - nodes.ready} node(s) not Ready`);
@@ -1685,8 +1700,8 @@ function renderClusterHealth(d) {
   const rm = STATUS_META[rc ? rc.status : 'absent'] || STATUS_META.absent;
   const rring = $('#health-rancher-ring'); if (rring) rring.style.setProperty('--ring-color', rm.color);
   const rcenter = $('#health-rancher-center');
-  if (rcenter) rcenter.innerHTML = `<div class="text-[9px] tracking-widest text-fg-mute">IMAGE</div>
-    <div class="text-[12px] font-semibold" style="color:${rm.color}">${rc && rc.version ? _esc(rc.version) : '—'}</div>`;
+  if (rcenter) rcenter.innerHTML = `<div class="text-[8px] tracking-[0.16em] text-fg-mute font-semibold mb-0.5">IMAGE</div>
+    <div class="text-[12.5px] font-bold leading-none" style="color:${rm.color}">${rc && rc.version ? _esc(rc.version) : '—'}</div>`;
   const rtext = $('#health-rancher-text'); if (rtext) rtext.textContent = (rc && rc.installed) ? rm.label : 'Not installed';
   const rsub = $('#health-rancher-sub');
   if (rsub) rsub.textContent = (rc && rc.installed) ? `${rc.ready}/${rc.desired} replicas · cattle-system` : 'cattle-system';
