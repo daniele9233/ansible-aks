@@ -602,6 +602,15 @@
           </table>
         </div>
 
+        <!-- TLS Certificate exposing the Rancher console -->
+        <div class="card mb-6">
+          <div class="px-6 py-4 border-b border-rule flex items-center justify-between">
+            <h2 class="text-[15px] font-semibold">TLS Certificate</h2>
+            <span class="text-[12px] text-fg-mute">Rancher console · <span class="font-mono">cattle-system/tls-rancher-ingress</span></span>
+          </div>
+          <div id="stack-cert" class="p-6 text-[12px] text-fg-mute">Loading certificate…</div>
+        </div>
+
         <!-- Storage (PersistentVolumes) -->
         <div class="card">
           <div class="px-6 py-4 border-b border-rule flex items-center justify-between">
@@ -1759,7 +1768,67 @@ async function renderStack() {
   }).join('') || '<tr><td colspan="6" class="text-center text-fg-mute py-10">No components defined.</td></tr>';
 
   lucide.createIcons({ icons: lucide.icons, attrs:{} });
+  renderStackCert();
   renderStackStorage();
+}
+
+async function renderStackCert() {
+  const box = $('#stack-cert');
+  if (!box) return;
+  box.innerHTML = '<span class="text-fg-mute">Loading certificate…</span>';
+  try {
+    const r = await fetch(API + '/api/cert', { cache:'no-store' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    if (!d.found) {
+      box.innerHTML = `<div class="text-fg-mute">No TLS certificate in <span class="font-mono text-fg">${_esc(d.namespace||'cattle-system')}/${_esc(d.secret||'tls-rancher-ingress')}</span>${d.error ? ' — ' + _esc(d.error) : ''}. Deploy Rancher (CA-Valid) to populate it.</div>`;
+      return;
+    }
+    const days = d.daysRemaining;
+    let exCls = 'badge-pend', exTxt = 'unknown';
+    if (days != null) {
+      if (days < 0)        { exCls = 'badge-bad'; exTxt = `expired ${-days}d ago`; }
+      else if (days <= 30) { exCls = 'badge-run'; exTxt = `${days}d left`; }
+      else                 { exCls = 'badge-ok';  exTxt = `${days}d left`; }
+    }
+    const fmt = iso => iso ? new Date(iso).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '—';
+    const issuer = d.issuerO || d.issuerCN || d.issuer || '—';
+    const typeBadge = d.selfSigned
+      ? '<span class="badge badge-run"><span class="dot"></span>self-signed</span>'
+      : '<span class="badge badge-ok"><span class="dot"></span>CA-signed</span>';
+    const sans = (d.sans && d.sans.length)
+      ? d.sans.map(s => `<span class="font-mono text-fg">${_esc(s)}</span>`).join('<span class="text-fg-dim">, </span>')
+      : '<span class="text-fg-dim">—</span>';
+    box.innerHTML = `
+      <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
+        <div class="min-w-0">
+          <div class="text-[11px] text-fg-mute uppercase tracking-wider mb-1">Common Name · FQDN</div>
+          <div class="text-[17px] font-semibold font-mono break-all">${_esc(d.subjectCN || d.fqdn || '—')}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">${typeBadge}<span class="badge ${exCls}"><span class="dot"></span>${exTxt}</span></div>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-5">
+        <div>
+          <div class="text-[11px] text-fg-mute mb-1">Issued by</div>
+          <div class="text-[13px] text-fg">${_esc(issuer)}</div>
+          ${(d.issuerCN && d.issuerO) ? `<div class="text-[11px] text-fg-dim font-mono mt-0.5">${_esc(d.issuerCN)}</div>` : ''}
+        </div>
+        <div>
+          <div class="text-[11px] text-fg-mute mb-1">Issued on</div>
+          <div class="text-[13px] text-fg">${fmt(d.notBefore)}</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-fg-mute mb-1">Expires on</div>
+          <div class="text-[13px] text-fg">${fmt(d.notAfter)}</div>
+        </div>
+      </div>
+      <div class="mt-5">
+        <div class="text-[11px] text-fg-mute mb-1.5">Subject Alternative Names</div>
+        <div class="text-[12px] leading-relaxed">${sans}</div>
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<span class="text-bad">Error: ${_esc(e.message)}</span>`;
+  }
 }
 
 async function renderStackStorage() {

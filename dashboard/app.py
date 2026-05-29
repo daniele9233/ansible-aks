@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify, render_template
+from datetime import datetime, timezone
 import subprocess
 import threading
 import tempfile
+import base64
 import shlex
 import shutil
 import json
@@ -318,6 +320,114 @@ def api_stack():
     env = _kubectl_env()
     comps, err = _collect_components(kubectl, env)
     return jsonify({'components': comps, 'error': err})
+
+
+# Secret TLS che espone la console Rancher (creato dal role CA-Valid dal vault,
+# o dynamiclistener in self-signed). Solo metadati pubblici del certificato.
+RANCHER_TLS_SECRET = 'tls-rancher-ingress'
+RANCHER_TLS_NS = 'cattle-system'
+
+
+def _parse_dn(dn):
+    """Parsa un Distinguished Name openssl ('CN = x, O = y' o '/CN=x/O=y') in dict."""
+    out = {}
+    for part in re.split(r'[,/]', dn or ''):
+        if '=' in part:
+            k, v = part.split('=', 1)
+            out[k.strip().upper()] = v.strip()
+    return out
+
+
+def _parse_openssl_date(s):
+    """Converte 'Jul 31 23:59:59 2027 GMT' in datetime UTC (None se non parsabile)."""
+    s = ' '.join((s or '').replace('GMT', '').split())
+    try:
+        return datetime.strptime(s, '%b %d %H:%M:%S %Y').replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+@app.route('/api/cert')
+def api_cert():
+    """Metadati del certificato TLS che espone la console Rancher: issuer, date di
+    emissione/scadenza, FQDN (CN) e SAN. Legge il Secret tls-rancher-ingress e
+    parsa SOLO il leaf con openssl (nessuna chiave privata viene mai esposta)."""
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    env = _kubectl_env()
+    base = {'found': False, 'secret': RANCHER_TLS_SECRET, 'namespace': RANCHER_TLS_NS, 'error': None}
+
+    code, out = _kubectl(kubectl, env, [
+        'get', 'secret', RANCHER_TLS_SECRET, '-n', RANCHER_TLS_NS,
+        '-o', 'jsonpath={.data.tls\\.crt}',
+    ])
+    if code != 0 or not out.strip():
+        base['error'] = (out.strip()[:200] or f'secret {RANCHER_TLS_SECRET} non trovato')
+        return jsonify(base)
+
+    try:
+        pem = base64.b64decode(out.strip())
+    except Exception as exc:
+        base['error'] = f'base64 decode: {exc}'
+        return jsonify(base)
+
+    openssl = shutil.which('openssl') or 'openssl'
+
+    def _run_openssl(args):
+        try:
+            r = subprocess.run([openssl, 'x509', '-noout'] + args,
+                               input=pem, capture_output=True, timeout=10)
+            return r.returncode, (r.stdout or b'').decode('utf-8', 'replace'), \
+                   (r.stderr or b'').decode('utf-8', 'replace')
+        except Exception as exc:
+            return -1, '', str(exc)
+
+    # Campi base (sempre supportati). Il leaf e' il primo cert del fullchain.
+    rc, txt, errtxt = _run_openssl(['-issuer', '-subject', '-startdate', '-enddate'])
+    if rc != 0:
+        base['error'] = (errtxt.strip()[:200] or 'openssl x509 fallito')
+        return jsonify(base)
+
+    info = dict(base)
+    info['found'] = True
+    issuer = subject = None
+    not_after_dt = None
+    for line in txt.splitlines():
+        line = line.strip()
+        if line.startswith('issuer='):
+            issuer = line[len('issuer='):].strip()
+        elif line.startswith('subject='):
+            subject = line[len('subject='):].strip()
+        elif line.startswith('notBefore='):
+            dt = _parse_openssl_date(line[len('notBefore='):])
+            info['notBefore'] = dt.isoformat().replace('+00:00', 'Z') if dt else None
+        elif line.startswith('notAfter='):
+            not_after_dt = _parse_openssl_date(line[len('notAfter='):])
+            info['notAfter'] = not_after_dt.isoformat().replace('+00:00', 'Z') if not_after_dt else None
+
+    # SAN (best-effort: -ext richiede openssl >= 1.1.1; se manca non e' fatale).
+    sans = []
+    rc2, txt2, _ = _run_openssl(['-ext', 'subjectAltName'])
+    if rc2 == 0:
+        for line in txt2.splitlines():
+            if 'DNS:' in line:
+                sans = [p.strip()[4:] for p in line.split(',') if p.strip().startswith('DNS:')]
+
+    issuer_dn = _parse_dn(issuer)
+    subject_dn = _parse_dn(subject)
+    info['issuer'] = issuer
+    info['subject'] = subject
+    info['issuerCN'] = issuer_dn.get('CN')
+    info['issuerO'] = issuer_dn.get('O')
+    info['subjectCN'] = subject_dn.get('CN')
+    info['fqdn'] = subject_dn.get('CN')
+    info['sans'] = sans
+    info['selfSigned'] = bool(
+        (issuer and subject and issuer == subject)
+        or 'dynamiclistener' in (issuer or '').lower()
+    )
+    if not_after_dt:
+        info['daysRemaining'] = (not_after_dt - datetime.now(timezone.utc)).days
+    return jsonify(info)
 
 
 @app.route('/api/cluster')
