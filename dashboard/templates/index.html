@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=1280" />
-<title>AKS Rancher — Ansible Console</title>
+<title>Polaris — Cluster Operations Platform</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><path d='M20,2L23,17L38,20L23,23L20,38L17,23L2,20L17,17Z' fill='%23e8a838'/></svg>" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -255,23 +256,28 @@
 
     <!-- Logo zone -->
     <div class="px-5 py-5 border-b border-rule flex items-center gap-3">
-      <!-- Kubernetes-derived hex mark (original, not Red Hat / not the K8s wheel) -->
+      <!-- Polaris — four-point pole star (original mark) -->
       <div class="relative w-9 h-9">
         <svg viewBox="0 0 40 40" class="w-9 h-9">
           <defs>
             <linearGradient id="logoG" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0" stop-color="#e8a838"/>
+              <stop offset="0" stop-color="#f3bb5a"/>
               <stop offset="1" stop-color="#c48a1d"/>
             </linearGradient>
+            <radialGradient id="logoGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stop-color="#e8a838" stop-opacity=".30"/>
+              <stop offset="1" stop-color="#e8a838" stop-opacity="0"/>
+            </radialGradient>
           </defs>
-          <polygon points="20,3 35,11 35,29 20,37 5,29 5,11" fill="none" stroke="url(#logoG)" stroke-width="1.6"/>
-          <polygon points="20,10 28,14.5 28,25.5 20,30 12,25.5 12,14.5" fill="none" stroke="#e8a838" stroke-width="1" opacity=".6"/>
-          <circle cx="20" cy="20" r="2.2" fill="#e8a838"/>
+          <circle cx="20" cy="20" r="19" fill="url(#logoGlow)"/>
+          <path d="M20,2 L23.2,16.8 L38,20 L23.2,23.2 L20,38 L16.8,23.2 L2,20 L16.8,16.8 Z" fill="url(#logoG)"/>
+          <circle cx="20" cy="20" r="2.3" fill="#0a0e14"/>
+          <circle cx="31.5" cy="9" r="1.5" fill="#f3bb5a"/>
         </svg>
       </div>
       <div class="leading-tight">
-        <div class="font-bold tracking-tight text-[15px]">AKS Rancher</div>
-        <div class="text-[11px] font-light text-fg-mute -mt-0.5">Ansible Automation</div>
+        <div class="font-bold tracking-tight text-[15px]">Polaris</div>
+        <div class="text-[11px] font-light text-fg-mute -mt-0.5">Cluster Operations Platform</div>
       </div>
     </div>
 
@@ -323,7 +329,7 @@
     </nav>
 
     <div class="px-4 py-3 border-t border-rule text-[11px] text-fg-dim flex items-center justify-between">
-      <span>v0.4.2 · build 1187</span>
+      <span>Polaris · v0.5.0</span>
       <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span>online</span>
     </div>
   </aside>
@@ -350,14 +356,56 @@
         <span class="text-fg">aks-prod-weu</span>
       </div>
 
-      <div class="flex items-center">
+      <div class="flex items-center gap-0.5">
         <button class="icon-btn" id="btn-refresh" title="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
-        <button class="icon-btn relative" title="Notifications">
-          <i data-lucide="bell" class="w-4 h-4"></i>
-          <span id="notif-badge" class="absolute top-1.5 right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-brand text-ink-900 text-[10px] font-semibold flex items-center justify-center">2</span>
-        </button>
-        <button class="icon-btn" title="Settings"><i data-lucide="settings" class="w-4 h-4"></i></button>
-        <div class="ml-2 w-9 h-9 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold tracking-wide">DP</div>
+
+        <!-- Notifications -->
+        <div class="relative">
+          <button class="icon-btn relative" id="btn-notif" title="Notifications" aria-haspopup="true" aria-expanded="false">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+            <span id="notif-badge" class="hidden absolute top-1.5 right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-brand text-ink-900 text-[10px] font-semibold flex items-center justify-center">0</span>
+          </button>
+          <div id="pop-notif" class="popover hidden absolute right-0 mt-2 w-80 card z-50 overflow-hidden" style="box-shadow:0 16px 48px rgba(0,0,0,.55)">
+            <div class="px-4 py-3 border-b border-rule flex items-center justify-between">
+              <span class="font-medium text-[13px]">Notifications</span>
+              <button class="text-[11px] text-fg-mute hover:text-fg" id="notif-clear">Clear all</button>
+            </div>
+            <div id="notif-list" class="max-h-[320px] overflow-auto"></div>
+            <a href="#/activity" class="block px-4 py-2.5 text-[12px] text-brand hover:text-brand-hi border-t border-rule" data-pop-close>Open Activity Log →</a>
+          </div>
+        </div>
+
+        <!-- About / Settings -->
+        <div class="relative">
+          <button class="icon-btn" id="btn-settings" title="About Polaris" aria-haspopup="true" aria-expanded="false"><i data-lucide="settings" class="w-4 h-4"></i></button>
+          <div id="pop-settings" class="popover hidden absolute right-0 mt-2 w-72 card z-50 overflow-hidden" style="box-shadow:0 16px 48px rgba(0,0,0,.55)">
+            <div class="px-4 py-3 border-b border-rule">
+              <div class="font-medium text-[13px]">About Polaris</div>
+              <div class="text-[11px] text-fg-mute mt-0.5">Cluster Operations Platform</div>
+            </div>
+            <div class="px-4 py-3 text-[12px] space-y-2">
+              <div class="flex items-center justify-between"><span class="text-fg-mute">Version</span><span class="font-mono text-fg">v0.5.0</span></div>
+              <div class="flex items-center justify-between"><span class="text-fg-mute">Cluster</span><span class="font-mono text-fg">aks-prod-weu</span></div>
+              <div class="flex items-center justify-between"><span class="text-fg-mute">Backend</span><span class="font-mono text-fg" id="settings-backend">checking…</span></div>
+            </div>
+            <a href="#/howto" class="flex items-center gap-2 px-4 py-2.5 text-[12px] text-brand hover:text-brand-hi border-t border-rule" data-pop-close><i data-lucide="book-open" class="w-3.5 h-3.5"></i>Open documentation</a>
+          </div>
+        </div>
+
+        <!-- User -->
+        <div class="relative">
+          <button class="ml-1 w-9 h-9 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold tracking-wide hover:border-rule-strong" id="btn-user" aria-haspopup="true" aria-expanded="false">DP</button>
+          <div id="pop-user" class="popover hidden absolute right-0 mt-2 w-64 card z-50 overflow-hidden" style="box-shadow:0 16px 48px rgba(0,0,0,.55)">
+            <div class="px-4 py-3 border-b border-rule flex items-center gap-3">
+              <div class="w-9 h-9 rounded-full bg-ink-500 border border-rule flex items-center justify-center text-[12px] font-semibold">DP</div>
+              <div class="min-w-0">
+                <div class="text-[13px] font-medium truncate">Daniele Pascolini</div>
+                <div class="text-[11px] text-fg-mute font-mono truncate">azureuser@controller</div>
+              </div>
+            </div>
+            <div class="px-4 py-2.5 text-[11px] text-fg-mute">Signed in via SSH tunnel · session local</div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -372,8 +420,8 @@
           <div class="absolute inset-0 grid-bg opacity-50 -mx-8 -mt-8 -mb-4 rounded-b-lg" style="pointer-events:none"></div>
           <div class="relative">
             <div class="text-[11px] tracking-[0.15em] uppercase text-fg-dim mb-2">Operations · Production</div>
-            <h1 class="text-[26px] font-semibold leading-tight">Welcome back to AKS Rancher</h1>
-            <p class="text-fg-mute mt-1 text-[14px]">Manage Rancher deployments on Azure Kubernetes Service — vault, dry-run and apply playbooks against the live cluster.</p>
+            <h1 class="text-[26px] font-semibold leading-tight">Welcome back to Polaris</h1>
+            <p class="text-fg-mute mt-1 text-[14px]">Your fixed point over Azure Kubernetes — govern Rancher, storage and observability from a single control plane: vault, dry-run and apply playbooks against the live cluster.</p>
           </div>
         </div>
 
@@ -433,7 +481,7 @@
                 <div class="section-label mb-1">Rancher Version</div>
                 <div class="text-[14px] font-medium">Helm chart version</div>
                 <div class="text-[12px] text-fg-mute mt-0.5">stable · k8s 1.29</div>
-                <a href="#" class="inline-flex items-center gap-1 text-[12px] text-brand hover:text-brand-hi mt-2">Check updates <i data-lucide="arrow-right" class="w-3 h-3"></i></a>
+                <a href="https://www.suse.com/suse-rancher/support-matrix/" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-[12px] text-brand hover:text-brand-hi mt-2">Support matrix <i data-lucide="external-link" class="w-3 h-3"></i></a>
               </div>
             </div>
           </div>
@@ -447,8 +495,8 @@
               <p class="text-[12px] text-fg-mute">Job outcomes across this session and the past month</p>
             </div>
             <div class="flex items-center gap-2">
-              <select class="field !w-auto !h-8 !text-[12px]"><option>Past month</option><option>Past week</option><option>Past 24h</option></select>
-              <select class="field !w-auto !h-8 !text-[12px]"><option>All job types</option><option>Deploy</option><option>Dry-Run</option><option>Vault</option></select>
+              <select id="chart-range" class="field !w-auto !h-8 !text-[12px]"><option value="month">Past month</option><option value="week">Past week</option><option value="day">Past 24h</option></select>
+              <select id="chart-type" class="field !w-auto !h-8 !text-[12px]"><option value="all">All job types</option><option value="Deploy">Deploy</option><option value="Dry-Run">Dry-Run</option><option value="Vault">Vault</option></select>
               <a href="#/activity" class="text-[12px] text-brand hover:text-brand-hi inline-flex items-center gap-1">Go to Activity <i data-lucide="arrow-right" class="w-3 h-3"></i></a>
             </div>
           </div>
@@ -1218,9 +1266,8 @@ function mountSideTerminals(screenKey) {
   });
   // backfill any existing lines
   refreshAllTerminals();
-  // wire clear/copy
-  node.querySelectorAll('[data-clear-term]').forEach(b=> b.addEventListener('click', clearTerminals));
-  node.querySelectorAll('[data-copy-term]').forEach(b=> b.addEventListener('click', () => copyTerminal(b)));
+  // clear/copy are handled by global event delegation (see ACTION BINDINGS),
+  // so they work for both the templated panels and the static Activity Log.
 }
 
 function renderActivityScreen() {
@@ -1381,7 +1428,10 @@ function stopTimer(action) {
 function renderJobs() {
   const tbody = $('#jobs-tbody');
   if (!tbody) return;
-  const sample = state.jobs.length ? state.jobs : seedSampleJobs();
+  state.hiddenSeed = state.hiddenSeed || new Set();
+  const sample = state.jobs.length
+    ? state.jobs
+    : seedSampleJobs().filter(j => !state.hiddenSeed.has(j.id));
   const view = sample.slice().reverse().slice(0, 8);
 
   tbody.innerHTML = view.map(j => {
@@ -1397,13 +1447,14 @@ function renderJobs() {
       <td><span class="badge ${badge} ${j.status==='running'?'pulse':''}"><span class="dot"></span>${label}</span></td>
       <td class="text-fg-mute">${l.type}</td>
       <td class="text-fg-mute">${finCell}</td>
-      <td><button class="icon-btn !w-7 !h-7"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button></td>
+      <td><button class="icon-btn !w-7 !h-7" data-remove-job="${j.id}" title="Remove from history"><i data-lucide="x" class="w-4 h-4"></i></button></td>
     </tr>`;
   }).join('');
 
   $('#jobs-empty').classList.toggle('hidden', view.length > 0);
   lucide.createIcons({ icons: lucide.icons, attrs:{} });
   drawActivityChart(sample);
+  renderNotifications(sample);
 }
 
 // purely for demo on first load — never persisted
@@ -1447,32 +1498,54 @@ function finishCurrentJob(status) {
    CHART
    ============================================================ */
 let chart;
+// Driven by the two selects above the chart (#chart-range, #chart-type).
+const chartFilters = { range: 'month', type: 'all' };
+
 function drawActivityChart(jobs) {
   const ctx = $('#activityChart');
   if (!ctx) return;
-  const days = 30;
-  const buckets = Array.from({length: days}, () => ({s:0, f:0}));
+  // Never render into a hidden section: the canvas would have 0 size and the
+  // chart would come up blank. It's redrawn on entering the Dashboard route.
+  if (ctx.offsetParent === null) return;
+
+  // Bucketing descriptor per selected range.
+  const RANGES = {
+    month: { count: 30, unitMs: 86400000, demo: true,  fmt: d => d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) },
+    week:  { count: 7,  unitMs: 86400000, demo: true,  fmt: d => d.toLocaleDateString(undefined, {weekday:'short'}) },
+    day:   { count: 24, unitMs: 3600000,  demo: false, fmt: d => String(d.getHours()).padStart(2,'0') + ':00' },
+  };
+  const R = RANGES[chartFilters.range] || RANGES.month;
+  const typeF = chartFilters.type;
+
+  const src = (typeF === 'all')
+    ? jobs
+    : jobs.filter(j => (ACTION_LABEL[j.action]?.type) === typeF);
+
+  const buckets = Array.from({length: R.count}, () => ({s:0, f:0}));
   const now = Date.now();
-  jobs.forEach(j => {
+  src.forEach(j => {
     if (!j.finishedAt) return;
-    const offset = Math.floor((now - j.finishedAt) / (86400 * 1000));
-    if (offset >= 0 && offset < days) {
-      if (j.status === 'success') buckets[days-1-offset].s++;
-      else if (j.status === 'failed') buckets[days-1-offset].f++;
+    const offset = Math.floor((now - j.finishedAt) / R.unitMs);
+    if (offset >= 0 && offset < R.count) {
+      if (j.status === 'success') buckets[R.count-1-offset].s++;
+      else if (j.status === 'failed') buckets[R.count-1-offset].f++;
     }
   });
-  // mild noise to give the chart shape for the demo
-  buckets.forEach((b, i) => {
-    if (i < days - 4) {
-      const wave = Math.max(0, Math.round(2 + Math.sin(i/3) + Math.cos(i/5)));
-      b.s += wave;
-      if (i % 7 === 0) b.f += 1;
-    }
-  });
-  const labels = buckets.map((_, i) => {
-    const d = new Date(now - (days-1-i)*86400*1000);
-    return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
-  });
+
+  // Soft synthetic baseline so a fresh session still has shape — only for the
+  // day-grained 'all' view, and only on the older portion, so that real recent
+  // jobs always stand out against it.
+  if (R.demo && typeF === 'all') {
+    buckets.forEach((b, i) => {
+      if (i < R.count - 2) {
+        const wave = Math.max(0, Math.round(2 + Math.sin(i/3) + Math.cos(i/5)));
+        b.s += wave;
+        if (i % 7 === 0) b.f += 1;
+      }
+    });
+  }
+
+  const labels = buckets.map((_, i) => R.fmt(new Date(now - (R.count-1-i)*R.unitMs)));
 
   const data = {
     labels,
@@ -1689,6 +1762,13 @@ document.addEventListener('click', async (e) => {
     const inp = tog.parentElement.querySelector('input');
     inp.type = inp.type === 'password' ? 'text' : 'password';
   }
+
+  // Terminal Clear / Copy — delegated so the static Activity Log buttons
+  // work too (they aren't inside a mounted template panel).
+  const clrTerm = e.target.closest('[data-clear-term]');
+  if (clrTerm) { clearTerminals(); return; }
+  const cpyTerm = e.target.closest('[data-copy-term]');
+  if (cpyTerm) { copyTerminal(cpyTerm); return; }
 
   const copy = e.target.closest('[data-copy]');
   if (copy) {
@@ -1954,6 +2034,100 @@ $('#btn-refresh')?.addEventListener('click', () => {
 $('#hamburger')?.addEventListener('click', () => {
   $('#sidebar').classList.toggle('hidden');
 });
+
+/* ---- chart filters (range + job type) ---- */
+$('#chart-range')?.addEventListener('change', (e) => { chartFilters.range = e.target.value; renderJobs(); });
+$('#chart-type')?.addEventListener('change',  (e) => { chartFilters.type  = e.target.value; renderJobs(); });
+
+/* ---- remove a single job from the Recent Jobs list (delegated) ---- */
+document.addEventListener('click', (e) => {
+  const rm = e.target.closest('[data-remove-job]');
+  if (!rm) return;
+  const id = rm.dataset.removeJob;
+  const before = state.jobs.length;
+  state.jobs = state.jobs.filter(j => j.id !== id);
+  if (state.jobs.length !== before) saveJobs();
+  else { state.hiddenSeed = state.hiddenSeed || new Set(); state.hiddenSeed.add(id); } // demo row
+  renderJobs();
+});
+
+/* ============================================================
+   TOP-BAR POPOVERS (notifications · about · user)
+   ============================================================ */
+function closeAllPopovers(except) {
+  $$('.popover').forEach(p => { if (p !== except) p.classList.add('hidden'); });
+  $$('[aria-haspopup]').forEach(b => b.setAttribute('aria-expanded','false'));
+}
+function wirePopover(btnId, popId) {
+  const btn = $('#'+btnId), pop = $('#'+popId);
+  if (!btn || !pop) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = pop.classList.contains('hidden');
+    closeAllPopovers(willOpen ? pop : null);
+    pop.classList.toggle('hidden', !willOpen);
+    btn.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen && popId === 'pop-settings') checkBackend();
+  });
+}
+wirePopover('btn-notif',    'pop-notif');
+wirePopover('btn-settings', 'pop-settings');
+wirePopover('btn-user',     'pop-user');
+
+// click outside / links flagged data-pop-close / Esc → close
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-pop-close]')) { closeAllPopovers(null); return; }
+  if (!e.target.closest('.popover') && !e.target.closest('[aria-haspopup]')) closeAllPopovers(null);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPopovers(null); });
+
+$('#notif-clear')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  state.notifCleared = Date.now();
+  renderNotifications(state.jobs.length ? state.jobs : seedSampleJobs());
+});
+
+function renderNotifications(jobs) {
+  const list = $('#notif-list'), badge = $('#notif-badge');
+  if (!list) return;
+  const cutoff = state.notifCleared || 0;
+  const items = (jobs || [])
+    .filter(j => j.finishedAt && j.finishedAt > cutoff && (j.status === 'success' || j.status === 'failed'))
+    .slice().reverse().slice(0, 8);
+
+  if (!items.length) {
+    list.innerHTML = '<div class="px-4 py-6 text-center text-[12px] text-fg-mute">No notifications</div>';
+  } else {
+    list.innerHTML = items.map(j => {
+      const l = ACTION_LABEL[j.action] || { name:j.action, type:'—' };
+      const ok = j.status === 'success';
+      const ic = ok ? 'check-circle-2' : 'alert-circle';
+      const col = ok ? '#3fb87a' : '#e25555';
+      return `<div class="px-4 py-2.5 border-b border-rule flex items-start gap-2.5">
+        <i data-lucide="${ic}" class="w-4 h-4 shrink-0 mt-0.5" style="color:${col}"></i>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] text-fg">${l.name} <span class="text-fg-mute">${ok ? 'completed' : 'failed'}</span></div>
+          <div class="text-[11px] text-fg-dim">${l.type} · ${fmtRel(j.finishedAt)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const failed = (jobs || []).filter(j => j.status === 'failed' && j.finishedAt && j.finishedAt > cutoff).length;
+  if (failed > 0) { badge.textContent = String(failed); badge.classList.remove('hidden'); }
+  else badge.classList.add('hidden');
+  lucide.createIcons({ icons: lucide.icons, attrs:{} });
+}
+
+async function checkBackend() {
+  const el = $('#settings-backend'); if (!el) return;
+  el.textContent = 'checking…'; el.style.color = '';
+  try {
+    const r = await fetch(API + '/api/output?since=0', { cache:'no-store' });
+    if (r.ok) { el.textContent = 'connected'; el.style.color = '#3fb87a'; }
+    else { el.textContent = 'error ' + r.status; el.style.color = '#e25555'; }
+  } catch { el.textContent = 'offline'; el.style.color = '#e25555'; }
+}
 
 /* ============================================================
    SYNTAX HIGHLIGHT (YAML / Bash)
