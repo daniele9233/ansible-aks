@@ -350,10 +350,13 @@
       <div class="flex-1"></div>
 
       <div class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-ink-700 border border-rule text-[12px] text-fg-mute">
-        <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
-        <span>main</span>
+        <a href="https://github.com/daniele9233/ansible-aks" target="_blank" rel="noopener"
+           class="inline-flex items-center gap-1.5 hover:text-fg transition-colors" title="Open repository on GitHub">
+          <i data-lucide="github" class="w-3.5 h-3.5"></i>
+          <span>main</span>
+        </a>
         <span class="mx-1 text-fg-off">·</span>
-        <span class="text-fg">aks-prod-weu</span>
+        <span class="text-fg" id="cluster-name" title="kubectl current-context">cluster…</span>
       </div>
 
       <div class="flex items-center gap-0.5">
@@ -385,7 +388,7 @@
             </div>
             <div class="px-4 py-3 text-[12px] space-y-2">
               <div class="flex items-center justify-between"><span class="text-fg-mute">Version</span><span class="font-mono text-fg">v0.5.0</span></div>
-              <div class="flex items-center justify-between"><span class="text-fg-mute">Cluster</span><span class="font-mono text-fg">aks-prod-weu</span></div>
+              <div class="flex items-center justify-between"><span class="text-fg-mute">Cluster</span><span class="font-mono text-fg" id="settings-cluster">cluster…</span></div>
               <div class="flex items-center justify-between"><span class="text-fg-mute">Backend</span><span class="font-mono text-fg" id="settings-backend">checking…</span></div>
             </div>
             <a href="#/howto" class="flex items-center gap-2 px-4 py-2.5 text-[12px] text-brand hover:text-brand-hi border-t border-rule" data-pop-close><i data-lucide="book-open" class="w-3.5 h-3.5"></i>Open documentation</a>
@@ -487,12 +490,12 @@
           </div>
         </div>
 
-        <!-- ACTIVITY CHART -->
-        <div class="card mb-6">
+        <!-- ACTIVITY CHART (hidden until the first real job of the session) -->
+        <div class="card mb-6 hidden" id="activity-chart-card">
           <div class="flex items-center justify-between px-6 py-4 border-b border-rule">
             <div>
               <h2 class="text-[15px] font-semibold">Recent Activity</h2>
-              <p class="text-[12px] text-fg-mute">Job outcomes across this session and the past month</p>
+              <p class="text-[12px] text-fg-mute">Job outcomes for this session — green success, red failed</p>
             </div>
             <div class="flex items-center gap-2">
               <select id="chart-range" class="field !w-auto !h-8 !text-[12px]"><option value="month">Past month</option><option value="week">Past week</option><option value="day">Past 24h</option></select>
@@ -1428,11 +1431,14 @@ function stopTimer(action) {
 function renderJobs() {
   const tbody = $('#jobs-tbody');
   if (!tbody) return;
-  state.hiddenSeed = state.hiddenSeed || new Set();
-  const sample = state.jobs.length
-    ? state.jobs
-    : seedSampleJobs().filter(j => !state.hiddenSeed.has(j.id));
+  // Real session jobs only — no demo seed. Empty history => empty table.
+  const sample = state.jobs;
   const view = sample.slice().reverse().slice(0, 8);
+
+  // Chart is hidden until the first real job of the session; it reappears
+  // only once there is at least one deploy/dry-run/vault outcome to plot.
+  const chartCard = $('#activity-chart-card');
+  if (chartCard) chartCard.classList.toggle('hidden', sample.length === 0);
 
   tbody.innerHTML = view.map(j => {
     const l = ACTION_LABEL[j.action] || { name:j.action, type:'—' };
@@ -1455,20 +1461,6 @@ function renderJobs() {
   lucide.createIcons({ icons: lucide.icons, attrs:{} });
   drawActivityChart(sample);
   renderNotifications(sample);
-}
-
-// purely for demo on first load — never persisted
-function seedSampleJobs() {
-  const now = Date.now();
-  const H = 3600*1000, D = 24*H;
-  return [
-    { id:'#1182', action:'vault_main',      status:'success', finishedAt: now - 3*D },
-    { id:'#1183', action:'dryrun_ca_valid', status:'success', finishedAt: now - 2*D - 4*H },
-    { id:'#1184', action:'deploy_ca_valid', status:'failed',  finishedAt: now - 2*D - 1*H },
-    { id:'#1185', action:'dryrun_ca_valid', status:'success', finishedAt: now - 1*D - 6*H },
-    { id:'#1186', action:'deploy_ca_valid', status:'success', finishedAt: now - 1*D - 2*H },
-    { id:'#1187', action:'dryrun_self',     status:'success', finishedAt: now - 6*H },
-  ];
 }
 
 function pushJob(action) {
@@ -1510,9 +1502,9 @@ function drawActivityChart(jobs) {
 
   // Bucketing descriptor per selected range.
   const RANGES = {
-    month: { count: 30, unitMs: 86400000, demo: true,  fmt: d => d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) },
-    week:  { count: 7,  unitMs: 86400000, demo: true,  fmt: d => d.toLocaleDateString(undefined, {weekday:'short'}) },
-    day:   { count: 24, unitMs: 3600000,  demo: false, fmt: d => String(d.getHours()).padStart(2,'0') + ':00' },
+    month: { count: 30, unitMs: 86400000, fmt: d => d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) },
+    week:  { count: 7,  unitMs: 86400000, fmt: d => d.toLocaleDateString(undefined, {weekday:'short'}) },
+    day:   { count: 24, unitMs: 3600000,  fmt: d => String(d.getHours()).padStart(2,'0') + ':00' },
   };
   const R = RANGES[chartFilters.range] || RANGES.month;
   const typeF = chartFilters.type;
@@ -1531,19 +1523,6 @@ function drawActivityChart(jobs) {
       else if (j.status === 'failed') buckets[R.count-1-offset].f++;
     }
   });
-
-  // Soft synthetic baseline so a fresh session still has shape — only for the
-  // day-grained 'all' view, and only on the older portion, so that real recent
-  // jobs always stand out against it.
-  if (R.demo && typeF === 'all') {
-    buckets.forEach((b, i) => {
-      if (i < R.count - 2) {
-        const wave = Math.max(0, Math.round(2 + Math.sin(i/3) + Math.cos(i/5)));
-        b.s += wave;
-        if (i % 7 === 0) b.f += 1;
-      }
-    });
-  }
 
   const labels = buckets.map((_, i) => R.fmt(new Date(now - (R.count-1-i)*R.unitMs)));
 
@@ -1708,30 +1687,30 @@ function mockSequenceFor(action) {
     '\x1b[33mPLAY [Install Rancher on AKS] ********************************\x1b[0m',
     '',
     '\x1b[36mTASK [Gathering Facts] ***************************************\x1b[0m',
-    '\x1b[32mok: [aks-prod-weu]\x1b[0m',
+    '\x1b[32mok: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [cert-manager : Add jetstack chart repo] ****************\x1b[0m',
-    '\x1b[32mok: [aks-prod-weu]\x1b[0m',
+    '\x1b[32mok: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [cert-manager : Install cert-manager release] ***********\x1b[0m',
-    mode ? '\x1b[33mchanged: [aks-prod-weu]\x1b[0m   \x1b[2m(dry-run, not applied)\x1b[0m'
-         : '\x1b[33mchanged: [aks-prod-weu]\x1b[0m',
+    mode ? '\x1b[33mchanged: [localhost]\x1b[0m   \x1b[2m(dry-run, not applied)\x1b[0m'
+         : '\x1b[33mchanged: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [rancher : Create cattle-system namespace] **************\x1b[0m',
-    '\x1b[32mok: [aks-prod-weu]\x1b[0m',
+    '\x1b[32mok: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [rancher : Install rancher chart] ***********************\x1b[0m',
-    mode ? '\x1b[33mchanged: [aks-prod-weu]\x1b[0m   \x1b[2m(dry-run)\x1b[0m'
-         : '\x1b[33mchanged: [aks-prod-weu]\x1b[0m',
+    mode ? '\x1b[33mchanged: [localhost]\x1b[0m   \x1b[2m(dry-run)\x1b[0m'
+         : '\x1b[33mchanged: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [rancher : Wait for rancher webhook deployment] *********\x1b[0m',
-    '\x1b[32mok: [aks-prod-weu]\x1b[0m',
+    '\x1b[32mok: [localhost]\x1b[0m',
     '',
     '\x1b[36mTASK [rancher : Apply bootstrap-admin secret] ****************\x1b[0m',
-    '\x1b[32mok: [aks-prod-weu]\x1b[0m',
+    '\x1b[32mok: [localhost]\x1b[0m',
     '',
     '\x1b[33mPLAY RECAP ***************************************************\x1b[0m',
-    '\x1b[32maks-prod-weu               : ok=24  changed=6  unreachable=0  failed=0\x1b[0m',
+    '\x1b[32mlocalhost                  : ok=24  changed=6  unreachable=0  failed=0\x1b[0m',
   ];
 }
 
@@ -2021,15 +2000,26 @@ $('#btn-disks-delete')?.addEventListener('click', () => {
    MISC
    ============================================================ */
 $('#btn-clear-history')?.addEventListener('click', () => {
-  state.jobs = []; saveJobs(); renderJobs();
+  // Wipe the whole session history: table empties AND the chart disappears
+  // (it returns only after the next real deploy/dry-run). Also clears the
+  // notifications derived from those jobs.
+  state.jobs = [];
+  state.notifCleared = Date.now();
+  saveJobs();
+  renderJobs();
 });
 $('#btn-refresh')?.addEventListener('click', () => {
-  const b = $('#btn-refresh');
-  b.querySelector('i').style.transition = 'transform 600ms ease-out';
-  b.querySelector('i').style.transform = 'rotate(360deg)';
-  setTimeout(()=> { b.querySelector('i').style.transform = ''; }, 700);
+  // Lucide replaces <i data-lucide> with <svg>, so spin the <svg> (querying
+  // 'i' returned null and threw — that's why refresh did nothing before).
+  const ic = $('#btn-refresh').querySelector('svg, i');
+  if (ic) {
+    ic.style.transition = 'transform 600ms ease-out';
+    ic.style.transform = 'rotate(360deg)';
+    setTimeout(()=> { ic.style.transform = ''; }, 700);
+  }
   renderJobs();
   pollOutput();
+  refreshCluster();
 });
 $('#hamburger')?.addEventListener('click', () => {
   $('#sidebar').classList.toggle('hidden');
@@ -2044,10 +2034,8 @@ document.addEventListener('click', (e) => {
   const rm = e.target.closest('[data-remove-job]');
   if (!rm) return;
   const id = rm.dataset.removeJob;
-  const before = state.jobs.length;
   state.jobs = state.jobs.filter(j => j.id !== id);
-  if (state.jobs.length !== before) saveJobs();
-  else { state.hiddenSeed = state.hiddenSeed || new Set(); state.hiddenSeed.add(id); } // demo row
+  saveJobs();
   renderJobs();
 });
 
@@ -2084,7 +2072,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPo
 $('#notif-clear')?.addEventListener('click', (e) => {
   e.stopPropagation();
   state.notifCleared = Date.now();
-  renderNotifications(state.jobs.length ? state.jobs : seedSampleJobs());
+  renderNotifications(state.jobs);
 });
 
 function renderNotifications(jobs) {
@@ -2127,6 +2115,24 @@ async function checkBackend() {
     if (r.ok) { el.textContent = 'connected'; el.style.color = '#3fb87a'; }
     else { el.textContent = 'error ' + r.status; el.style.color = '#e25555'; }
   } catch { el.textContent = 'offline'; el.style.color = '#e25555'; }
+}
+
+/* Real cluster identity from `kubectl config current-context` (backend).
+   Replaces the old hardcoded "aks-prod-weu" placeholder and self-updates
+   across clusters. Falls back gracefully when offline. */
+async function refreshCluster() {
+  const chip = $('#cluster-name');
+  const settings = $('#settings-cluster');
+  try {
+    const r = await fetch(API + '/api/cluster', { cache:'no-store' });
+    const j = await r.json();
+    const name = (j && j.context) ? j.context : 'unknown';
+    if (chip) chip.textContent = name;
+    if (settings) settings.textContent = name;
+  } catch {
+    if (chip) chip.textContent = 'offline';
+    if (settings) settings.textContent = 'offline';
+  }
 }
 
 /* ============================================================
@@ -2411,6 +2417,7 @@ lucide.createIcons({ icons: lucide.icons, attrs:{} });
 route();
 renderJobs();
 setRunningStatus('idle');
+refreshCluster();
 </script>
 </body>
 </html>

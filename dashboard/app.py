@@ -174,6 +174,28 @@ def _kubectl_env():
     return env
 
 
+@app.route('/api/cluster')
+def api_cluster():
+    """Nome del cluster corrente = kubectl config current-context.
+    Usato dalla GUI per mostrare il cluster reale su cui si opera, al posto
+    del vecchio placeholder hardcoded. Read-only, veloce."""
+    kubectl = shutil.which('kubectl') or 'kubectl'
+    try:
+        result = subprocess.run(
+            [kubectl, 'config', 'current-context'],
+            capture_output=True, text=True, env=_kubectl_env(),
+            cwd=ANSIBLE_DIR, timeout=10,
+        )
+        if result.returncode != 0:
+            return jsonify({'context': None,
+                            'error': (result.stderr or result.stdout).strip()[:200]})
+        return jsonify({'context': result.stdout.strip()})
+    except subprocess.TimeoutExpired:
+        return jsonify({'context': None, 'error': 'kubectl timeout (>10s)'})
+    except Exception as exc:
+        return jsonify({'context': None, 'error': str(exc)})
+
+
 @app.route('/api/disks/list')
 def api_disks_list():
     """Lista i PersistentVolume del cluster con metadati Azure Disk."""
